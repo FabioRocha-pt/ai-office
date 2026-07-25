@@ -2,8 +2,10 @@
 // mostra estado em tempo real, e servir uma versão em cache seria pior do
 // que não funcionar de todo. A cache existe só para a app abrir offline e
 // dizer que não há ligação, em vez de dar erro do browser.
-const CACHE = 'ai-office-v2';
-const SHELL = ['/flip.html', '/office3d.js', '/vendor/three.module.min.js', '/icon.svg', '/manifest.webmanifest'];
+const CACHE = 'ai-office-v3';
+// A app do telemóvel deixou de usar Three.js: os robôs são SVG animado
+// com CSS. Menos 660 KB para descarregar e guardar.
+const SHELL = ['/flip.html', '/robots.js', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

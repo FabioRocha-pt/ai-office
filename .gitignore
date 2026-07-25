@@ -37,4 +37,3 @@ orchestrator/public/vendor/
 Thumbs.db
 *.log
 npm-debug.log*
-orchestrator/workspaces/

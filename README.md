@@ -215,6 +215,14 @@ deploy/
 
 ---
 
+## Continuidade
+
+O [HANDOFF.md](HANDOFF.md) tem o contexto completo do projeto: decisões de
+arquitetura e o porquê delas, as armadilhas que custaram tempo a descobrir
+(flags de CLIs, comportamento do WebView, limites do ecrã exterior), e o
+plano detalhado da próxima funcionalidade. Vale a pena lê-lo antes de mexer
+no `pipeline.js` ou no `runner.js`.
+
 ## Licença
 
 MIT — ver [LICENSE](LICENSE).

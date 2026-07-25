@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <WebView
+        android:id="@+id/web"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+
+    <!-- Sobreposição de estado: sem isto, qualquer falha dá ecrã preto
+         e o utilizador fica sem saber o que aconteceu. -->
+    <LinearLayout
+        android:id="@+id/overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="22dp"
+        android:background="#000000">
+
+        <TextView
+            android:id="@+id/ov_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="A ligar…"
+            android:textColor="#F2F5F9"
+            android:textSize="16sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/ov_msg"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:gravity="center"
+            android:textColor="#8B96A8"
+            android:textSize="12sp"/>
+
+        <Button
+            android:id="@+id/ov_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Mudar endereço"
+            android:textColor="#000000"
+            android:backgroundTint="#F2F5F9"
+            android:visibility="gone"/>
+    </LinearLayout>
+</FrameLayout>

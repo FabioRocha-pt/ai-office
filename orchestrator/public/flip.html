@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>Office</title>
+<style>
+  /* ------------------------------------------------------------------
+     Feito para a Flex Window do Z Flip 6: ~360x374 px CSS.
+     Regras que este ecrã impõe:
+       - preto puro (AMOLED: pixel apagado = menos bateria e mais contraste)
+       - alvos de toque >= 44px, porque o ecrã é do tamanho de dois dedos
+       - canto inferior esquerdo livre (é onde ficam as câmaras)
+       - nada de scroll vertical: cada página cabe inteira
+     ------------------------------------------------------------------ */
+  :root{
+    --bg:#000;
+    --card:#111317;
+    --line:#22262E;
+    --ink:#F2F5F9;
+    --ink-2:#8B96A8;
+    --ceo:#F59E0B;
+    --cto:#3B82F6;
+    --designer:#10B981;
+    --developer:#8B5CF6;
+    --qa:#EF4444;
+    --ok:#10B981;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0;overflow:hidden}
+  body{
+    background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:13px;-webkit-font-smoothing:antialiased;
+    user-select:none;
+  }
+
+  /* -------- cabeçalho -------- */
+  .hdr{
+    height:30px;display:flex;align-items:center;gap:7px;
+    padding:0 13px;font-size:12.5px;font-weight:500;color:var(--ink-2);
+  }
+  .live{width:8px;height:8px;border-radius:50%;background:#3A4150;flex:none}
+  .live.on{background:var(--ok)}
+  .hdr .r{margin-left:auto;font-variant-numeric:tabular-nums}
+
+  /* -------- páginas com scroll-snap horizontal -------- */
+  .pages{
+    display:flex;height:calc(100% - 30px - 28px);
+    overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;
+    scrollbar-width:none;
+  }
+  .pages::-webkit-scrollbar{display:none}
+  .page{
+    min-width:100%;height:100%;scroll-snap-align:start;
+    padding:4px 12px 8px;display:flex;flex-direction:column;gap:8px;
+  }
+
+  /* -------- página: escritório em miniatura -------- */
+  .stage{
+    position:relative;flex:1;min-height:150px;
+    border-radius:12px;overflow:hidden;
+    background:radial-gradient(120% 90% at 50% 22%, #16191F 0%, #0A0C10 70%);
+    border:1px solid var(--line);
+    touch-action:none;
+  }
+  .stage canvas{display:block;width:100%;height:100%}
+  .stage .badge{
+    position:absolute;left:10px;top:8px;
+    font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-2);pointer-events:none;
+  }
+  .stage .pick{
+    position:absolute;left:9px;right:9px;bottom:8px;
+    display:flex;align-items:center;gap:8px;
+    background:rgba(10,12,16,.9);border:1px solid var(--line);
+    border-radius:10px;padding:8px 11px;font-size:13px;
+    opacity:0;transition:opacity .18s;pointer-events:none;
+  }
+  .stage .pick.on{opacity:1}
+  .stage .pick i{width:9px;height:9px;border-radius:50%;flex:none}
+  .stage .pick b{font-weight:650}
+  .stage .pick span{margin-left:auto;color:var(--ink-2);font-size:11.5px;text-align:right}
+
+  .now{display:flex;align-items:center;gap:9px;min-width:0}
+  .now .v{
+    font-size:15px;font-weight:650;min-width:0;flex:1;line-height:1.25;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .now .p{
+    font-size:12px;font-weight:600;color:var(--ink-2);
+    font-variant-numeric:tabular-nums;flex:none;
+    background:var(--card);border:1px solid var(--line);
+    border-radius:7px;padding:4px 9px;
+  }
+  .crowd{
+    display:flex;gap:6px;font-size:11.5px;color:var(--ink-2);
+  }
+  .crowd b{color:var(--ink);font-weight:650}
+
+  .crew{display:flex;gap:5px}
+  .who{
+    flex:1;background:var(--card);border:1px solid var(--line);
+    border-radius:9px;padding:7px 3px;text-align:center;
+  }
+  .who i{display:block;width:7px;height:7px;border-radius:50%;margin:0 auto 4px;background:#39404D}
+  .who b{display:block;font-size:9.5px;font-weight:700;letter-spacing:.02em}
+  .who.work{border-color:currentColor}
+  .who.work i{animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.who.work i{animation:none}}
+
+  .feed{
+    flex:none;height:46px;   /* metade do que era: os bonecos é que mandam */
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px;font-family:ui-monospace,monospace;font-size:11.5px;line-height:1.55;
+    color:#9FB0C6;overflow-y:auto;white-space:pre-wrap;word-break:break-word;
+  }
+
+  /* -------- página: construir / agente / corrigir -------- */
+  .modes{display:flex;gap:5px;flex:none}
+  .mode{
+    flex:1;padding:9px 4px;border-radius:9px;
+    background:var(--card);border:1px solid var(--line);
+    color:var(--ink-2);font:inherit;font-size:12.5px;font-weight:600;
+    cursor:pointer;text-align:center;
+  }
+  .mode.on{background:#F2F5F9;border-color:#F2F5F9;color:#000}
+
+  .picker{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;min-height:0}
+  .picker:empty{display:none}
+
+  .opt{
+    display:flex;align-items:center;gap:9px;width:100%;
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:10px 11px;color:var(--ink);font:inherit;font-size:13.5px;
+    font-weight:600;text-align:left;cursor:pointer;
+  }
+  .opt i{width:9px;height:9px;border-radius:50%;flex:none;background:#39404D}
+  .opt small{display:block;font-weight:400;font-size:11px;color:var(--ink-2);margin-top:1px}
+  .opt .txt{flex:1;min-width:0}
+  .opt .txt b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .opt.on{border-color:#F2F5F9;background:#1A1E25}
+  .opt.on .tick{color:var(--ok);font-weight:700}
+  .tick{flex:none;font-size:15px;color:transparent}
+
+  /* configuração da equipa */
+  .grp{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink-2);margin:2px 0 -1px}
+  .chips{display:flex;gap:5px;flex-wrap:wrap}
+  .chip{
+    flex:1;min-width:62px;padding:8px 4px;border-radius:8px;
+    background:var(--card);border:1px solid var(--line);
+    color:var(--ink-2);font:inherit;font-size:12px;font-weight:600;cursor:pointer;
+  }
+  .chip.on{background:#F2F5F9;border-color:#F2F5F9;color:#000}
+
+  .arow{
+    display:flex;align-items:center;gap:8px;
+    background:var(--card);border:1px solid var(--line);border-radius:9px;
+    padding:8px 10px;
+  }
+  .arow i{width:8px;height:8px;border-radius:50%;flex:none}
+  .arow .nm{flex:1;font-size:13px;font-weight:600;min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .arow .cli{
+    flex:none;border:1px solid var(--line);background:#1B1F26;color:var(--ink);
+    border-radius:99px;padding:5px 11px;font:inherit;font-size:11.5px;font-weight:650;
+    cursor:pointer;min-width:88px;text-align:center;
+  }
+  .arow .cli:active{opacity:.6}
+  .arow .tier{flex:none;font-size:10px;color:var(--ink-2);width:44px;text-align:right}
+
+  .heard{
+    flex:none;background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;font-size:13.5px;line-height:1.45;color:var(--ink);
+    height:56px;overflow-y:auto;
+  }
+  .heard:empty::before{content:"Toca no micro e dita o que queres.";color:var(--ink-2)}
+
+  .row2{display:flex;gap:6px;flex:none}
+  .mic{
+    flex:none;width:62px;padding:14px 0;border-radius:12px;
+    border:1px solid var(--line);background:var(--card);color:var(--ink);
+    font-size:19px;cursor:pointer;
+  }
+  .mic.rec{background:#2A1116;border-color:var(--qa);color:#FFD9DE;animation:pulse .9s infinite}
+  @keyframes pulse{50%{opacity:.45}}
+  @media (prefers-reduced-motion:reduce){.mic.rec{animation:none}}
+
+  .send{
+    flex:1;padding:14px;border-radius:12px;border:none;
+    background:#F2F5F9;color:#000;font:inherit;font-size:15px;font-weight:700;cursor:pointer;
+  }
+  .send:disabled{opacity:.3}
+
+  /* -------- página: vault -------- */
+  .vlist{display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1}
+  .vitem{
+    display:flex;align-items:center;gap:9px;
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:10px 11px;cursor:pointer;color:var(--ink);text-align:left;
+    font:inherit;width:100%;
+  }
+  .vitem .nm{flex:1;min-width:0}
+  .vitem .nm b{display:block;font-size:14px;font-weight:650;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vitem .nm span{font-size:11.5px;color:var(--ink-2)}
+  .vitem .go{font-size:19px;color:var(--ink-2);flex:none}
+  .st{width:7px;height:7px;border-radius:50%;flex:none}
+  .st.done{background:var(--ok)}
+  .st.building{background:var(--ceo)}
+  .st.failed{background:var(--qa)}
+
+  .ttl{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+
+  /* -------- rodapé: pontos + espaço para as câmaras -------- */
+  .dots{
+    height:28px;display:flex;align-items:center;justify-content:center;gap:8px;
+    padding-left:64px; /* canto inferior esquerdo livre para as lentes */
+  }
+  .dt{width:7px;height:7px;border-radius:50%;background:#2A303A;transition:all .2s}
+  .dt.on{background:var(--ink);width:18px;border-radius:99px}
+
+  .toast{
+    position:fixed;left:12px;right:12px;bottom:32px;z-index:9;
+    background:#1C2029;border:1px solid var(--line);border-radius:10px;
+    padding:11px 13px;font-size:13px;
+    opacity:0;transform:translateY(6px);transition:.2s;pointer-events:none;
+  }
+  .toast.on{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <i class="live" id="live"></i>
+  <span id="conn">a ligar</span>
+  <span class="r" id="clock"></span>
+</div>
+
+<div class="pages" id="pages">
+
+  <!-- 1 · ESTADO -->
+  <section class="page">
+    <div class="stage" id="stage">
+      <span class="badge">Consultoria</span>
+      <div class="pick" id="pick"><i></i><b></b><span></span></div>
+    </div>
+    <div class="now">
+      <span class="v" id="proj">Nenhum a decorrer</span>
+      <span class="p" id="prog">0/5</span>
+    </div>
+    <div class="crowd" id="crowd"></div>
+    <div class="feed" id="feed">À espera.</div>
+  </section>
+
+  <!-- 2 · CONSTRUIR / AGENTE / CORRIGIR -->
+  <section class="page">
+    <div class="modes">
+      <button class="mode on" data-mode="new">Novo</button>
+      <button class="mode" data-mode="fix">Corrigir</button>
+      <button class="mode" data-mode="team">Equipa</button>
+    </div>
+    <div class="picker" id="picker"></div>
+    <div class="heard" id="heard"></div>
+    <div class="row2">
+      <button class="mic" id="mic">●</button>
+      <button class="send" id="send" disabled>Construir</button>
+    </div>
+  </section>
+
+  <!-- 3 · VAULT -->
+  <section class="page">
+    <div class="ttl">Plataformas</div>
+    <div class="vlist" id="vlist"></div>
+  </section>
+
+</div>
+
+<div class="dots">
+  <i class="dt on"></i><i class="dt"></i><i class="dt"></i>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const COLOR = { ceo:'#F59E0B', cto:'#3B82F6', designer:'#10B981', developer:'#8B5CF6', qa:'#EF4444' };
+const SHORT = { ceo:'CEO', cto:'CTO', designer:'DES', developer:'DEV', qa:'QA' };
+const AGENT_NAME = { ceo:'CEO', cto:'CTO', designer:'Designer', developer:'Developer', qa:'QA Tester' };
+const ORDER = ['ceo','cto','designer','developer','qa'];
+
+
+let agents = {}, statuses = {}, pipelineOn = false;
+
+/* ---------- utilidades ---------- */
+function toast(msg, ms = 2200){
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), ms);
+}
+function tick(){
+  $('clock').textContent = new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+}
+setInterval(tick, 10000); tick();
+
+function feed(text){
+  const f = $('feed');
+  if(f.textContent === 'À espera.') f.textContent = '';
+  f.textContent += text;
+  if(f.textContent.length > 2600) f.textContent = f.textContent.slice(-2000);
+  f.scrollTop = f.scrollHeight;
+}
+
+/* ---------- página 1: ligado ao escritório 3D (office3d.js) ---------- */
+function renderCrew(){
+  const v = ORDER.map(id => statuses[id] || 'idle');
+  const done = v.filter(s => s === 'done').length;
+  const work = v.filter(s => s === 'working').length;
+  const play = v.filter(s => s === 'idle').length;
+  const bad  = v.filter(s => s === 'error').length;
+
+  $('prog').textContent = done + '/5';
+
+  const bits = [];
+  if(work) bits.push(`<span><b>${work}</b> a trabalhar</span>`);
+  if(play) bits.push(`<span><b>${play}</b> à toa</span>`);
+  if(done) bits.push(`<span><b>${done}</b> pronto${done > 1 ? 's' : ''}</span>`);
+  if(bad)  bits.push(`<span style="color:#EF4444"><b>${bad}</b> falhou</span>`);
+  $('crowd').innerHTML = bits.join('<span style="opacity:.35">·</span>');
+
+  window.Office3D?.sync(statuses);
+}
+
+/* ---------- página 2: voz ----------
+   Dois motores possíveis:
+     - dentro do APK, a ponte nativa (AndroidHost) -> SpeechRecognizer
+       do Android. É a única que funciona num WebView, onde o
+       webkitSpeechRecognition simplesmente não existe.
+     - no browser, a Web Speech API normal.
+   ------------------------------------------------------------------ */
+const NATIVE = !!(window.AndroidHost && window.AndroidHost.isNative && window.AndroidHost.isNative());
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, brief = '';
+
+function setBrief(text){
+  brief = (text || '').trim();
+  $('heard').textContent = brief;
+  if(typeof refreshSend === 'function') refreshSend();
+  else $('send').disabled = !brief;
+}
+
+function paintMic(){
+  $('mic').classList.toggle('rec', listening);
+  $('mic').textContent = listening ? '■' : '●';
+}
+
+/* eventos vindos do Android */
+window.__nativeEvent = (event, payload) => {
+  if(event === 'speech-start'){ listening = true; paintMic(); }
+  if(event === 'speech-partial') setBrief(payload);
+  if(event === 'speech-final'){
+    listening = false; paintMic();
+    if(payload) setBrief(payload);
+  }
+  if(event === 'speech-error'){
+    listening = false; paintMic(); toast(payload);
+  }
+};
+
+if(!NATIVE && SR){
+  rec = new SR();
+  rec.lang = 'pt-PT';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = e => {
+    let out = '';
+    for(let i = 0; i < e.results.length; i++) out += e.results[i][0].transcript;
+    setBrief(out);
+  };
+  rec.onend = () => { listening = false; paintMic(); };
+  rec.onerror = e => { listening = false; paintMic(); toast('Micro: ' + e.error); };
+}else if(!NATIVE && !SR){
+  $('mic').disabled = true;
+  $('mic').textContent = '✕';
+}
+
+$('mic').addEventListener('click', () => {
+  if(NATIVE){
+    if(listening) window.AndroidHost.stopSpeech();
+    else { setBrief(''); window.AndroidHost.startSpeech(); }
+    return;
+  }
+  if(!rec) return;
+  if(listening){ rec.stop(); return; }
+  setBrief('');
+  try{ rec.start(); listening = true; paintMic(); }
+  catch{ toast('Não consegui abrir o micro.'); }
+});
+
+/* dentro do APK: toque longo no relógio abre a configuração do servidor */
+if(NATIVE){
+  const clock = $('clock');
+  let hold;
+  clock.addEventListener('pointerdown', () => {
+    hold = setTimeout(() => window.AndroidHost.openSettings(), 800);
+  });
+  ['pointerup','pointerleave','pointercancel'].forEach(e =>
+    clock.addEventListener(e, () => clearTimeout(hold)));
+}
+
+/* ---------- modos: novo / corrigir / equipa ---------- */
+let mode = 'new';
+let pickedProject = null;
+let projects = [];
+
+// configuração da equipa
+const CLIS = ['claude', 'codex', 'antigravity'];
+const CLI_SHORT = { claude:'Claude', codex:'Codex', antigravity:'Antigravity' };
+const COMPLEXITY = [
+  ['auto','Auto'], ['simples','Simples'], ['medio','Médio'], ['complexo','Complexo'],
+];
+const TIER_PT = { light:'leve', standard:'normal', heavy:'forte' };
+
+let cliMap = {};
+let tierMatrix = {};
+let complexity = localStorage.getItem('complexity') || 'auto';
+let saveTimer = null;
+
+const SEND_LABEL = { new:'Construir', fix:'Corrigir' };
+
+function refreshSend(){
+  const row = document.querySelector('.row2');
+  if(mode === 'team'){ row.style.display = 'none'; return; }
+  row.style.display = 'flex';
+  $('heard').style.display = '';
+  $('send').disabled = !brief || (mode === 'fix' && !pickedProject);
+  $('send').textContent = SEND_LABEL[mode] || 'Enviar';
+}
+
+/** Escalão que cada agente vai usar com a complexidade atual. */
+function tierOf(id){
+  if(complexity === 'auto') return null;         // decidido no servidor
+  return tierMatrix?.[complexity]?.[id] || null;
+}
+
+function renderTeam(){
+  const chips = COMPLEXITY.map(([v,l]) =>
+    `<button class="chip ${complexity === v ? 'on' : ''}" data-cx="${v}">${l}</button>`).join('');
+
+  const rows = ORDER.map(id => {
+    const cli = cliMap[id] || '—';
+    const t = tierOf(id);
+    return `<div class="arow">
+      <i style="background:${COLOR[id]}"></i>
+      <span class="nm">${AGENT_NAME[id] || id}</span>
+      <span class="tier">${t ? TIER_PT[t] : ''}</span>
+      <button class="cli" data-agent="${id}">${CLI_SHORT[cli] || cli}</button>
+    </div>`;
+  }).join('');
+
+  $('picker').innerHTML =
+    `<div class="grp">Complexidade</div><div class="chips">${chips}</div>` +
+    `<div class="grp">Quem corre em quê</div>${rows}` +
+    `<div style="font-size:10.5px;color:var(--ink-2);line-height:1.4;padding:2px 1px 6px">
+       Toca na CLI para trocar. Em Auto, a complexidade é adivinhada pelo briefing.
+     </div>`;
+}
+
+function renderPicker(){
+  const p = $('picker');
+
+  if(mode === 'team'){ renderTeam(); refreshSend(); return; }
+
+  if(mode === 'new'){
+    p.innerHTML = '';
+    refreshSend();
+    return;
+  }
+
+  // corrigir: escolher a plataforma
+  if(!projects.length){
+    p.innerHTML = `<div style="color:var(--ink-2);font-size:12.5px;padding:10px 2px">
+      Ainda não há plataformas para corrigir.</div>`;
+    refreshSend();
+    return;
+  }
+  p.innerHTML = projects.slice(0, 12).map(pr => `
+    <button class="opt ${pickedProject === pr.id ? 'on' : ''}" data-project="${pr.id}">
+      <i style="background:${
+        pr.status === 'done' ? '#10B981' : pr.status === 'failed' ? '#EF4444' :
+        pr.status === 'incomplete' ? '#F59E0B' : '#8B96A8'}"></i>
+      <span class="txt"><b>${pr.name || pr.id}</b>
+        <small>${pr.files.files} ficheiros${pr.revisions ? ` · ${pr.revisions} alt.` : ''}</small></span>
+      <span class="tick">✓</span>
+    </button>`).join('');
+  refreshSend();
+}
+
+document.querySelector('.modes').addEventListener('click', e => {
+  const b = e.target.closest('.mode'); if(!b) return;
+  mode = b.dataset.mode;
+  document.querySelectorAll('.mode').forEach(m => m.classList.toggle('on', m === b));
+  $('heard').style.display = mode === 'team' ? 'none' : '';
+  renderPicker();
+});
+
+$('picker').addEventListener('click', async e => {
+  // complexidade
+  const cx = e.target.closest('[data-cx]');
+  if(cx){
+    complexity = cx.dataset.cx;
+    localStorage.setItem('complexity', complexity);
+    renderTeam();
+    return;
+  }
+
+  // trocar a CLI de um agente (cicla pelas disponíveis)
+  const cliBtn = e.target.closest('.cli');
+  if(cliBtn){
+    const id = cliBtn.dataset.agent;
+    const now = CLIS.indexOf(cliMap[id]);
+    cliMap[id] = CLIS[(now + 1) % CLIS.length];
+    renderTeam();
+    saveAssignments();
+    return;
+  }
+
+  // escolher plataforma a corrigir
+  const proj = e.target.closest('[data-project]');
+  if(proj){
+    pickedProject = pickedProject === proj.dataset.project ? null : proj.dataset.project;
+    renderPicker();
+  }
+});
+
+/** Grava com atraso: tocar três vezes seguidas não faz três pedidos. */
+function saveAssignments(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try{
+      const r = await fetch('/assignments', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(cliMap)
+      });
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'Não consegui gravar.');
+      cliMap = d.assignments || cliMap;
+      renderTeam();
+      toast('Equipa guardada.');
+    }catch(e){
+      toast(e.message);
+      loadTeam();   // volta ao que está mesmo gravado
+    }
+  }, 700);
+}
+
+async function loadTeam(){
+  try{
+    const [a, m] = await Promise.all([
+      fetch('/assignments').then(r => r.json()),
+      fetch('/models').then(r => r.json()),
+    ]);
+    cliMap = a.assignments || {};
+    tierMatrix = m.matrix || {};
+    if(mode === 'team') renderTeam();
+  }catch{}
+}
+
+/* ---------- envio ---------- */
+$('send').addEventListener('click', async () => {
+  if(!brief) return;
+  $('send').disabled = true;
+
+  const fix = mode === 'fix';
+  const url = fix ? `/projects/${encodeURIComponent(pickedProject)}/revise` : '/pipeline';
+  const body = fix ? { brief, complexity } : { brief, complexity };
+
+  try{
+    const r = await fetch(url, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || 'Não foi aceite.');
+    toast(fix ? 'Equipa a corrigir a plataforma.' : 'A equipa arrancou.');
+    $('pages').scrollTo({ left:0, behavior:'smooth' });
+    setBrief('');
+  }catch(e){
+    toast(e.message);
+    refreshSend();
+  }
+});
+
+/* ---------- página 3: vault ---------- */
+async function loadVault(){
+  try{
+    const list = await (await fetch('/projects')).json();
+    projects = list;
+    if(mode === 'fix') renderPicker();
+    if(!list.length){
+      $('vlist').innerHTML = `<div style="color:var(--ink-2);font-size:11.5px;padding:8px 2px">
+        Ainda não há plataformas.</div>`;
+      return;
+    }
+    $('vlist').innerHTML = list.slice(0, 14).map(p => `
+      <button class="vitem" data-id="${p.id}" ${p.entry?.type === 'none' ? 'disabled style="opacity:.45"' : ''}>
+        <i class="st ${p.status}"></i>
+        <span class="nm"><b>${p.name || p.id}</b>
+          <span>${p.files.files} ficheiros · ${p.git.total} commits</span></span>
+        <span class="go">›</span>
+      </button>`).join('');
+  }catch{
+    $('vlist').innerHTML = `<div style="color:var(--ink-2);font-size:11.5px">Falhou a leitura.</div>`;
+  }
+}
+
+$('vlist').addEventListener('click', async e => {
+  const btn = e.target.closest('.vitem'); if(!btn || btn.disabled) return;
+  const id = btn.dataset.id;
+  toast('A preparar…');
+  try{
+    const r = await fetch(`/projects/${encodeURIComponent(id)}/launch`, { method:'POST' });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || 'Falhou.');
+    location.href = d.url;
+  }catch(err){ toast(err.message); }
+});
+
+/* ---------- pontos de página ---------- */
+const pages = $('pages');
+pages.addEventListener('scroll', () => {
+  const i = Math.round(pages.scrollLeft / pages.clientWidth);
+  document.querySelectorAll('.dt').forEach((d,n) => d.classList.toggle('on', n === i));
+}, { passive:true });
+
+/* ---------- ligação ---------- */
+async function init(){
+  try{
+    const list = await (await fetch('/agents')).json();
+    for(const a of list){ agents[a.id] = a; statuses[a.id] = a.status; }
+  }catch{}
+  renderCrew();
+  renderPicker();
+  loadTeam();
+  loadVault();
+  connect();
+}
+
+function connect(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(proto + '://' + location.host);
+
+  ws.onopen = () => { $('conn').textContent = 'ligado'; $('live').classList.add('on'); };
+  ws.onclose = () => {
+    $('conn').textContent = 'a reconectar'; $('live').classList.remove('on');
+    setTimeout(connect, 2500);
+  };
+
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+
+    if(m.type === 'state'){
+      for(const [id,s] of Object.entries(m.state || {})) statuses[id] = s.status;
+      pipelineOn = !!m.pipeline?.running;
+      renderCrew();
+    }
+
+    if(m.type === 'pipeline'){
+      if(m.phase === 'start'){
+        pipelineOn = true;
+        $('proj').textContent = m.project?.name || 'A construir';
+        $('feed').textContent = '';
+        for(const id of ORDER) statuses[id] = 'idle';
+        renderCrew();
+      }
+      if(m.phase === 'end'){
+        pipelineOn = false;
+        $('proj').textContent = m.error ? 'Falhou' : 'Concluído';
+        toast(m.error ? 'Falhou: ' + m.error : 'Plataforma pronta.');
+        loadVault();
+      }
+    }
+
+    if(m.type === 'status'){
+      statuses[m.agentId] = m.status;
+      renderCrew();
+      if(m.status === 'working') feed(`\n— ${agents[m.agentId]?.label || m.agentId} —\n`);
+    }
+
+    if(m.type === 'stream') feed(m.chunk);
+  };
+}
+
+init();
+
+/* escritório 3D (módulo à parte, carregado depois da UI estar de pé) */
+import('/office3d.js')
+  .then(m => { m.mount(document.getElementById('stage')); renderCrew(); })
+  .catch(e => { console.warn('3D indisponível:', e); document.getElementById('stage').style.display = 'none'; });
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>

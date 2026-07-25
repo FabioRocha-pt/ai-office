@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:padding="18dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ligar ao escritório"
+            android:textColor="#F2F5F9"
+            android:textSize="19sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Endereço do orchestrator na tua VPS."
+            android:textColor="#8B96A8"
+            android:textSize="12sp"/>
+
+        <EditText
+            android:id="@+id/url"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:hint="http://000.00.00.000:3000"
+            android:textColorHint="#5A6579"
+            android:textColor="#F2F5F9"
+            android:textSize="14sp"
+            android:inputType="textUri"
+            android:background="#14171D"
+            android:padding="12dp"
+            android:importantForAutofill="no"/>
+
+        <TextView
+            android:id="@+id/err"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#EF4444"
+            android:textSize="12sp"
+            android:visibility="gone"/>
+
+        <Button
+            android:id="@+id/save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="Ligar"
+            android:textColor="#000000"
+            android:backgroundTint="#F2F5F9"/>
+    </LinearLayout>
+</ScrollView>

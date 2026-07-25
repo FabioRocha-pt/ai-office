@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quadro de Pessoal — AI Office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --manila:#DED9C8;
+    --memo:#EDE9DC;
+    --ink:#22251E;
+    --ink-soft:#5C6154;
+    --olive:#4E5A3F;
+    --signal:#B5482C;
+    --brass:#A8863E;
+    --rule:rgba(34,37,30,.18);
+  }
+
+  *{box-sizing:border-box}
+
+  body{
+    margin:0;
+    background:var(--manila);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    /* textura de papel: linhas finíssimas, como folha de registo */
+    background-image:repeating-linear-gradient(
+      to bottom,
+      transparent 0 27px,
+      rgba(34,37,30,.035) 27px 28px
+    );
+  }
+
+  header{
+    background:var(--olive);
+    color:var(--memo);
+    padding:18px 22px 14px;
+    border-bottom:3px solid var(--ink);
+  }
+  .board-title{
+    font-family:'IBM Plex Sans Condensed',sans-serif;
+    font-weight:700;
+    font-size:clamp(20px,4vw,30px);
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    margin:0;
+  }
+  .board-sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    opacity:.75;
+    margin-top:5px;
+    display:flex;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+
+  .brief-bar{
+    display:flex;
+    padding:14px 20px 0;
+    max-width:1180px;
+    margin:0 auto;
+  }
+  .brief-bar input{
+    flex:1;
+    background:#fff;
+    border:1px solid var(--rule);
+    border-right:none;
+    color:var(--ink);
+    font:inherit;font-size:14px;
+    padding:10px 12px;
+  }
+  .brief-bar input:focus{outline:2px solid var(--olive);outline-offset:-1px}
+  .brief-bar button{
+    background:var(--brass);color:var(--ink);border:none;
+    padding:10px 18px;white-space:nowrap;
+    font-family:'IBM Plex Sans Condensed',sans-serif;
+    font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;
+    cursor:pointer;
+  }
+  .brief-bar button:hover:not(:disabled){background:#B99442}
+  .brief-bar button:disabled{opacity:.45;cursor:not-allowed}
+  @media (max-width:600px){
+    .brief-bar{flex-direction:column;gap:7px}
+    .brief-bar input{border-right:1px solid var(--rule)}
+  }
+
+  .stage{
+    max-width:1180px;
+    margin:0 auto;
+    padding:8px 20px 0;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-soft);
+    min-height:17px;
+  }
+
+  .view-link{
+    color:var(--memo);
+    text-decoration:none;
+    border-bottom:1px solid rgba(237,233,220,.5);
+    padding-bottom:1px;
+  }
+  .view-link:hover{border-bottom-color:var(--memo)}
+
+  main{
+    padding:20px;
+    max-width:1180px;
+    margin:0 auto;
+    display:grid;
+    gap:16px;
+    grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+  }
+
+  .slot{
+    background:var(--memo);
+    border:1px solid var(--rule);
+    border-top:3px solid var(--olive);
+    display:flex;
+    flex-direction:column;
+  }
+
+  .slot-head{
+    display:flex;
+    align-items:center;
+    gap:11px;
+    padding:12px 14px 10px;
+    border-bottom:1px solid var(--rule);
+  }
+
+  /* Lâmpada de estado — o elemento assinatura do quadro */
+  .lamp{
+    width:13px;height:13px;
+    border-radius:50%;
+    flex:none;
+    background:var(--ink-soft);
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.45);
+  }
+  .lamp[data-s="working"]{
+    background:var(--signal);
+    box-shadow:0 0 0 3px rgba(181,72,44,.2), inset 0 1px 2px rgba(0,0,0,.3);
+    animation:pulse 1.1s ease-in-out infinite;
+  }
+  .lamp[data-s="done"]{
+    background:var(--brass);
+    box-shadow:0 0 0 3px rgba(168,134,62,.2), inset 0 1px 2px rgba(0,0,0,.3);
+  }
+  .lamp[data-s="error"]{
+    background:#7A2318;
+    box-shadow:0 0 0 3px rgba(122,35,24,.25);
+  }
+  @keyframes pulse{50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){
+    .lamp[data-s="working"]{animation:none}
+  }
+
+  .role{
+    font-family:'IBM Plex Sans Condensed',sans-serif;
+    font-weight:700;
+    font-size:19px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    line-height:1;
+  }
+  .meta{
+    margin-left:auto;
+    text-align:right;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    letter-spacing:.09em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    line-height:1.5;
+  }
+
+  .slot-body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:9px;flex:1}
+
+  textarea{
+    width:100%;
+    min-height:66px;
+    resize:vertical;
+    padding:9px 10px;
+    font:inherit;
+    font-size:14px;
+    background:#fff;
+    color:var(--ink);
+    border:1px solid var(--rule);
+    border-radius:0;
+  }
+  textarea:focus,button:focus-visible{
+    outline:2px solid var(--olive);
+    outline-offset:1px;
+  }
+
+  button{
+    align-self:flex-start;
+    background:var(--olive);
+    color:var(--memo);
+    border:none;
+    padding:9px 18px;
+    font-family:'IBM Plex Sans Condensed',sans-serif;
+    font-weight:600;
+    font-size:14px;
+    letter-spacing:.09em;
+    text-transform:uppercase;
+    cursor:pointer;
+  }
+  button:hover:not(:disabled){background:var(--ink)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+
+  .out{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    line-height:1.6;
+    white-space:pre-wrap;
+    word-break:break-word;
+    background:var(--manila);
+    border-left:3px solid var(--brass);
+    padding:10px 12px;
+    max-height:280px;
+    overflow-y:auto;
+    display:none;
+  }
+  .out.show{display:block}
+  .out:empty{display:none}
+
+  footer{
+    padding:14px 22px 30px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 class="board-title">Quadro de Pessoal</h1>
+  <div class="board-sub">
+    <span id="conn">A ligar…</span>
+    <span id="busy">0 em serviço</span>
+    <a href="/office.html" class="view-link">Escritório</a>
+    <a href="/vault.html" class="view-link">Vault</a>
+    <a href="/graphs.html" class="view-link">Gráficos</a>
+  </div>
+</header>
+
+<div class="brief-bar">
+  <input id="brief" type="text" placeholder="Descreve a plataforma que queres construir…" autocomplete="off">
+  <button id="brief-go">Pôr a equipa a trabalhar</button>
+</div>
+<div class="stage" id="stage"></div>
+
+<main id="board"></main>
+
+<footer>Consultoria Bonako · 5 lugares</footer>
+
+<script>
+const board = document.getElementById('board');
+const connEl = document.getElementById('conn');
+const busyEl = document.getElementById('busy');
+const slots = {};
+
+function updateBusy(){
+  const n = Object.values(slots).filter(s => s.lamp.dataset.s === 'working').length;
+  busyEl.textContent = n === 1 ? '1 em serviço' : n + ' em serviço';
+}
+
+function setStatus(id, status){
+  const s = slots[id];
+  if(!s) return;
+  s.lamp.dataset.s = status;
+  s.state.textContent = {
+    idle:'livre', working:'a trabalhar', done:'concluído', error:'falhou'
+  }[status] || status;
+  s.btn.disabled = status === 'working';
+  s.btn.textContent = status === 'working' ? 'A processar' : 'Enviar tarefa';
+  updateBusy();
+}
+
+async function loadAgents(){
+  const res = await fetch('/agents');
+  const agents = await res.json();
+
+  for(const a of agents){
+    const el = document.createElement('section');
+    el.className = 'slot';
+    el.innerHTML = `
+      <div class="slot-head">
+        <span class="lamp" data-s="${a.status}"></span>
+        <span class="role">${a.label}</span>
+        <span class="meta">${a.cli}<br><span class="state">livre</span></span>
+      </div>
+      <div class="slot-body">
+        <textarea placeholder="Que tarefa dás ao ${a.label}?"></textarea>
+        <button>Enviar tarefa</button>
+        <div class="out"></div>
+      </div>`;
+    board.appendChild(el);
+
+    slots[a.id] = {
+      lamp: el.querySelector('.lamp'),
+      state: el.querySelector('.state'),
+      btn: el.querySelector('button'),
+      input: el.querySelector('textarea'),
+      out: el.querySelector('.out')
+    };
+
+    slots[a.id].btn.addEventListener('click', () => send(a.id));
+    setStatus(a.id, a.status);
+  }
+}
+
+async function send(id){
+  const s = slots[id];
+  const task = s.input.value.trim();
+  if(!task){ s.input.focus(); return; }
+
+  s.out.textContent = '';
+  s.out.classList.remove('show');
+  setStatus(id, 'working');
+
+  try{
+    const res = await fetch('/task/' + id, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ task })
+    });
+    if(!res.ok){
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'O pedido não foi aceite.');
+    }
+  }catch(e){
+    setStatus(id, 'error');
+    s.out.textContent = e.message;
+    s.out.classList.add('show');
+  }
+}
+
+/* ---- pipeline: a equipa toda em cadeia ---- */
+const briefInput = document.getElementById('brief');
+const briefGo    = document.getElementById('brief-go');
+const stageEl    = document.getElementById('stage');
+const STAGE_NAMES = { ceo:'CEO', cto:'CTO', designer:'Designer', developer:'Developer', qa:'QA Tester' };
+let pipelineOn = false;
+
+function setPipelineUI(on){
+  pipelineOn = on;
+  briefGo.disabled = on;
+  briefInput.disabled = on;
+  briefGo.textContent = on ? 'Equipa a trabalhar…' : 'Pôr a equipa a trabalhar';
+}
+
+async function startPipeline(){
+  const brief = briefInput.value.trim();
+  if(!brief){ briefInput.focus(); return; }
+
+  for(const s of Object.values(slots)){ s.out.textContent = ''; s.out.classList.remove('show'); }
+  setPipelineUI(true);
+  stageEl.textContent = 'A arrancar…';
+
+  try{
+    const res = await fetch('/pipeline', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ brief })
+    });
+    if(!res.ok){
+      const e = await res.json().catch(()=>({}));
+      throw new Error(e.error || 'O pedido não foi aceite.');
+    }
+  }catch(err){
+    setPipelineUI(false);
+    stageEl.textContent = err.message;
+  }
+}
+
+briefGo.addEventListener('click', startPipeline);
+briefInput.addEventListener('keydown', e => { if(e.key === 'Enter') startPipeline(); });
+
+function connect(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(proto + '://' + location.host);
+
+  ws.onopen = () => { connEl.textContent = 'Ligado'; };
+
+  ws.onclose = () => {
+    connEl.textContent = 'Ligação perdida — a retomar…';
+    setTimeout(connect, 2500);
+  };
+
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+
+    if(msg.type === 'pipeline'){
+      if(msg.phase === 'start') setPipelineUI(true);
+      if(msg.phase === 'end'){
+        setPipelineUI(false);
+        stageEl.textContent = msg.error
+          ? 'O pipeline falhou: ' + msg.error
+          : 'Projeto concluído.';
+      }
+    }
+
+    if(msg.type === 'status'){
+      setStatus(msg.agentId, msg.status);
+
+      if(pipelineOn && msg.status === 'working'){
+        stageEl.textContent = 'A trabalhar: ' + (STAGE_NAMES[msg.agentId] || msg.agentId);
+      }
+
+      const s = slots[msg.agentId];
+      if(!s) return;
+      if(msg.output){ s.out.textContent = msg.output; s.out.classList.add('show'); }
+      if(msg.error){ s.out.textContent = msg.error; s.out.classList.add('show'); }
+    }
+
+    if(msg.type === 'stream'){
+      const s = slots[msg.agentId];
+      if(!s) return;
+      s.out.classList.add('show');
+      s.out.textContent += msg.chunk;
+      s.out.scrollTop = s.out.scrollHeight;
+    }
+  };
+}
+
+loadAgents().then(connect);
+</script>
+</body>
+</html>

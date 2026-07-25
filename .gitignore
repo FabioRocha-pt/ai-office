@@ -1,0 +1,40 @@
+# ---- dependências ----
+node_modules/
+package-lock.json.bak
+
+# ---- estado do escritório (gerado, nunca versionado) ----
+# Cada plataforma construída vive aqui, com git próprio.
+vault/
+# pasta antiga, anterior ao vault
+project/
+
+# ---- configuração local ----
+# Estes ficheiros guardam as TUAS escolhas (que CLI cada agente usa,
+# que modelos existem no teu plano). Variam de máquina para máquina.
+assignments.json
+models.json
+.env
+
+# ---- artefactos de build ----
+orchestrator/public/download/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# ---- three.js servido localmente ----
+# 660 KB de dependência que se descarrega com um comando.
+# Ver deploy/fetch-vendor.sh
+orchestrator/public/vendor/
+
+# ---- sistema ----
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+orchestrator/workspaces/

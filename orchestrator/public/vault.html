@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vault — AI Office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EDF1F7;--panel:#FFF;--ink:#1B2230;--ink-2:#5A6579;--ink-3:#93A0B4;
+    --line:#E2E8F1;--ok:#10B981;--warn:#F59E0B;--bad:#EF4444;--blue:#3B82F6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:Inter,system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+
+  .top{
+    display:flex;align-items:center;gap:14px;padding:12px 18px;
+    background:rgba(255,255,255,.85);backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;
+  }
+  .logo{font-weight:700;font-size:15px}
+  .logo span{color:var(--ink-3);font-weight:500}
+  .nav{margin-left:auto;display:flex;gap:7px}
+  .nav a{font-size:12.5px;font-weight:600;color:var(--ink-2);text-decoration:none;
+    padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:#fff}
+  .nav a:hover{background:#F2F5FA;color:var(--ink)}
+  .nav a.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  main{max-width:1080px;margin:0 auto;padding:26px 18px 60px}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
+  .sub{color:var(--ink-2);font-size:14px;margin:0 0 24px}
+
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:16px;display:flex;flex-direction:column;gap:11px;
+    box-shadow:0 1px 2px rgba(27,34,48,.04);
+  }
+  .card-head{display:flex;align-items:flex-start;gap:9px}
+  .card h3{font-size:15.5px;font-weight:650;margin:0;line-height:1.35;flex:1}
+  .tag{
+    font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 8px;border-radius:6px;white-space:nowrap;
+  }
+  .tag.done{background:#D1FAE5;color:#065F46}
+  .tag.building{background:#FEF3C7;color:#92400E}
+  .tag.failed{background:#FEE2E2;color:#991B1B}
+  .tag.incomplete{background:#FFEDD5;color:#9A3412}
+  .tag.interrupted{background:#E5E7EB;color:#374151}
+  .tag.unknown{background:#F2F5FA;color:var(--ink-2)}
+
+  .brief{font-size:13px;color:var(--ink-2);line-height:1.55;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+  .meta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-3);
+    font-family:'IBM Plex Mono',monospace}
+  .meta b{color:var(--ink);font-weight:600}
+
+  .stages{display:flex;gap:4px}
+  .stage{flex:1;height:4px;border-radius:99px;background:#EDF1F7}
+  .stage.ok{background:var(--ok)}
+  .stage.bad{background:var(--bad)}
+
+  .actions{display:flex;gap:7px;margin-top:2px}
+  .btn{
+    border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:9px;padding:9px 14px;font:inherit;font-size:13px;font-weight:600;
+    cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;
+  }
+  .btn:hover{background:#F7F9FC}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .btn.primary:hover{background:#2C374A}
+  .btn.danger{margin-left:auto;color:var(--bad);border-color:#FBD5D5}
+  .btn.danger:hover{background:#FEF2F2}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  .empty{
+    background:var(--panel);border:1px dashed #CBD5E5;border-radius:14px;
+    padding:44px 24px;text-align:center;color:var(--ink-2);
+  }
+  .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+  .empty a{color:var(--blue);font-weight:600}
+
+  .note{font-size:12px;color:var(--ink-3);margin-top:5px;min-height:16px}
+
+  /* painel de alteração, escondido até se pedir */
+  .fix{display:none;flex-direction:column;gap:9px;
+    border-top:1px solid var(--line);margin-top:3px;padding-top:12px}
+  .fix.open{display:flex}
+  .fix textarea{
+    width:100%;min-height:74px;resize:vertical;padding:10px 12px;
+    font:inherit;font-size:13.5px;color:var(--ink);
+    border:1px solid var(--line);border-radius:10px;
+  }
+  .fix textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.13)}
+  .fix .who{display:flex;flex-wrap:wrap;gap:6px}
+  .fix .who button{
+    border:1px solid var(--line);background:#fff;border-radius:99px;
+    padding:6px 12px;font:inherit;font-size:12px;font-weight:600;
+    color:var(--ink-2);cursor:pointer;display:inline-flex;align-items:center;gap:5px;
+  }
+  .fix .who button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .fix .hint{font-size:11.5px;color:var(--ink-3)}
+  .fix .go{align-self:flex-start;background:var(--ink);color:#fff;border:none;
+    border-radius:9px;padding:10px 18px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+  .fix .go:disabled{opacity:.45;cursor:not-allowed}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo">AI Office <span>· Vault</span></div>
+  <nav class="nav">
+    <a href="/office.html">Escritório</a>
+    <a href="/vault.html" class="on">Vault</a>
+    <a href="/graphs.html">Gráficos</a>
+    <a href="/flip.html">Telemóvel</a>
+  </nav>
+</div>
+
+<main>
+  <h1>Vault de plataformas</h1>
+  <p class="sub">Tudo o que o escritório construiu. Abre qualquer uma para a ver a funcionar.</p>
+  <div id="list"></div>
+</main>
+
+<script>
+const list = document.getElementById('list');
+
+const fmtBytes = b => b < 1024 ? b + ' B'
+  : b < 1048576 ? (b/1024).toFixed(1) + ' KB'
+  : (b/1048576).toFixed(1) + ' MB';
+
+const fmtDate = s => {
+  if(!s) return '—';
+  const d = new Date(s);
+  return d.toLocaleDateString('pt-PT', { day:'2-digit', month:'short' })
+    + ' · ' + d.toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit' });
+};
+
+const STATUS_PT = { done:'concluído', building:'a construir', failed:'com falhas',
+                    incomplete:'sem entrega', interrupted:'interrompido',
+                    unknown:'desconhecido' };
+
+async function load(){
+  let projects;
+  try{
+    projects = await (await fetch('/projects')).json();
+  }catch(e){
+    list.innerHTML = `<div class="empty"><b>Não consegui ler o vault</b>${e.message}</div>`;
+    return;
+  }
+
+  if(!projects.length){
+    list.innerHTML = `<div class="empty">
+      <b>O vault ainda está vazio</b>
+      Vai ao <a href="/office.html">escritório</a> e dá um briefing à equipa.
+    </div>`;
+    return;
+  }
+
+  list.className = 'grid';
+  list.innerHTML = '';
+
+  for(const p of projects){
+    const total = 5;
+    const stages = Array.from({length: total}, (_, i) => {
+      const s = (p.stages || [])[i];
+      return `<i class="stage ${s ? (s.ok ? 'ok' : 'bad') : ''}"></i>`;
+    }).join('');
+
+    const canOpen = p.entry?.type !== 'none';
+
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-head">
+        <h3>${p.name || p.id}</h3>
+        <span class="tag ${p.status}">${STATUS_PT[p.status] || p.status}</span>
+      </div>
+      <p class="brief">${p.brief || 'Sem briefing registado.'}</p>
+      <div class="stages">${stages}</div>
+      <div class="meta">
+        <span><b>${p.files.files}</b> ficheiros</span>
+        <span><b>${fmtBytes(p.files.bytes)}</b></span>
+        <span><b>${p.git.total}</b> commits</span>
+        ${p.revisions ? `<span><b>${p.revisions}</b> alteraç${p.revisions > 1 ? 'ões' : 'ão'}</span>` : ''}
+        <span>${fmtDate(p.createdAt)}</span>
+      </div>
+      <div class="actions">
+        <button class="btn primary open" ${canOpen ? '' : 'disabled'}>
+          ${canOpen ? 'Abrir plataforma' : 'Nada para abrir'}
+        </button>
+        <button class="btn fixbtn">Corrigir</button>
+        <button class="btn danger del">Apagar</button>
+      </div>
+      <div class="note"></div>
+      <div class="fix">
+        <textarea placeholder="O que queres mudar? Ex.: o total não fecha ao cêntimo quando divido por 3."></textarea>
+        <div class="who">
+          <button data-a="cto">CTO</button>
+          <button data-a="designer">Designer</button>
+          <button data-a="developer" class="on">Developer</button>
+          <button data-a="qa" class="on">QA Tester</button>
+        </div>
+        <div class="hint">Quem vai tratar disto. Por omissão, quem implementa e quem testa.</div>
+        <button class="go">Pôr a equipa a corrigir</button>
+      </div>`;
+
+    const note = card.querySelector('.note');
+
+    card.querySelector('.open').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = 'A preparar…';
+      try{
+        const r = await fetch(`/projects/${encodeURIComponent(p.id)}/launch`, { method:'POST' });
+        const data = await r.json();
+        if(!r.ok) throw new Error(data.error || 'Falhou.');
+        note.textContent = data.type === 'node'
+          ? `Servidor arrancado na porta ${data.port}.`
+          : 'Pronta.';
+        window.open(data.url, '_blank');
+      }catch(err){
+        note.textContent = err.message;
+      }finally{
+        btn.disabled = false; btn.textContent = 'Abrir plataforma';
+      }
+    });
+
+    /* --- correção --- */
+    const fix = card.querySelector('.fix');
+    const fixTa = fix.querySelector('textarea');
+    const fixGo = fix.querySelector('.go');
+
+    card.querySelector('.fixbtn').addEventListener('click', () => {
+      fix.classList.toggle('open');
+      if(fix.classList.contains('open')) fixTa.focus();
+    });
+
+    fix.querySelector('.who').addEventListener('click', e => {
+      const b = e.target.closest('button'); if(!b) return;
+      b.classList.toggle('on');
+    });
+
+    fixGo.addEventListener('click', async () => {
+      const brief = fixTa.value.trim();
+      if(!brief){ fixTa.focus(); return; }
+
+      const agents = [...fix.querySelectorAll('.who button.on')].map(b => b.dataset.a);
+      if(!agents.length){ note.textContent = 'Escolhe pelo menos um agente.'; return; }
+
+      fixGo.disabled = true; fixGo.textContent = 'A arrancar…';
+      try{
+        const r = await fetch(`/projects/${encodeURIComponent(p.id)}/revise`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ brief, agents })
+        });
+        const d = await r.json();
+        if(!r.ok) throw new Error(d.error || 'Não foi aceite.');
+        note.innerHTML = 'A equipa está a trabalhar nisto. Acompanha no <a href="/office.html" style="color:var(--blue)">escritório</a>.';
+        fix.classList.remove('open');
+        fixTa.value = '';
+      }catch(err){
+        note.textContent = err.message;
+      }finally{
+        fixGo.disabled = false; fixGo.textContent = 'Pôr a equipa a corrigir';
+      }
+    });
+
+    card.querySelector('.del').addEventListener('click', async () => {
+      if(!confirm(`Apagar "${p.name || p.id}"? Os ficheiros são removidos da VPS e não há como recuperar.`)) return;
+      try{
+        const r = await fetch(`/projects/${encodeURIComponent(p.id)}`, { method:'DELETE' });
+        if(!r.ok) throw new Error((await r.json()).error || 'Falhou.');
+        load();
+      }catch(err){ note.textContent = err.message; }
+    });
+
+    list.appendChild(card);
+  }
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "_comentario": "Copia para models.json e ajusta aos modelos que o teu plano aceita. Vazio = deixa a CLI decidir.",
+  "claude": { "light": "haiku", "standard": "sonnet", "heavy": "opus" },
+  "codex":  { "light": "gpt-5.4-mini", "standard": "gpt-5.6-terra", "heavy": "gpt-5.6-sol" },
+  "antigravity": { "light": "", "standard": "", "heavy": "" }
+}

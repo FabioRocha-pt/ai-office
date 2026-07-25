@@ -1,0 +1,8 @@
+{
+  "_comentario": "Copia para assignments.json para fixares que CLI corre cada agente. Sem este ficheiro, usam-se os defaults de roles.js. Também se muda pela interface, sem editar nada.",
+  "ceo": "codex",
+  "cto": "claude",
+  "designer": "antigravity",
+  "developer": "claude",
+  "qa": "codex"
+}

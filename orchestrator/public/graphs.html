@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gráficos — AI Office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EDF1F7;--panel:#FFF;--ink:#1B2230;--ink-2:#5A6579;--ink-3:#93A0B4;--line:#E2E8F1;
+    --ceo:#F59E0B;--cto:#3B82F6;--designer:#10B981;--developer:#8B5CF6;--qa:#EF4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:Inter,system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+
+  .top{display:flex;align-items:center;gap:14px;padding:12px 18px;
+    background:rgba(255,255,255,.85);backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  .logo{font-weight:700;font-size:15px}
+  .logo span{color:var(--ink-3);font-weight:500}
+  .nav{margin-left:auto;display:flex;gap:7px}
+  .nav a{font-size:12.5px;font-weight:600;color:var(--ink-2);text-decoration:none;
+    padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:#fff}
+  .nav a:hover{background:#F2F5FA;color:var(--ink)}
+  .nav a.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  main{max-width:1080px;margin:0 auto;padding:26px 18px 60px}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
+  .sub{color:var(--ink-2);font-size:14px;margin:0 0 24px}
+
+  .kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:18px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px 16px}
+  .kpi .n{font-size:29px;font-weight:700;letter-spacing:-.03em;line-height:1.1;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:12px;color:var(--ink-3);margin-top:3px;font-weight:500}
+
+  .cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:17px}
+  .card h2{font-size:13.5px;font-weight:650;margin:0 0 3px}
+  .card p{font-size:12px;color:var(--ink-3);margin:0 0 14px}
+  .wide{grid-column:1/-1}
+
+  .row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .row .name{font-size:13px;font-weight:550;width:92px;flex:none}
+  .row .track{flex:1;height:9px;background:#EDF1F7;border-radius:99px;overflow:hidden}
+  .row .fill{height:100%;border-radius:99px;transition:width .6s cubic-bezier(.2,.8,.3,1)}
+  .row .val{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-2);
+    width:56px;text-align:right;flex:none}
+
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .axis{stroke:var(--line);stroke-width:1}
+  .glabel{font-size:10px;fill:var(--ink-3);font-family:Inter,sans-serif}
+
+  .empty{background:var(--panel);border:1px dashed #CBD5E5;border-radius:14px;
+    padding:44px 24px;text-align:center;color:var(--ink-2)}
+  .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+  .empty a{color:var(--cto);font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo">AI Office <span>· Gráficos</span></div>
+  <nav class="nav">
+    <a href="/office.html">Escritório</a>
+    <a href="/vault.html">Vault</a>
+    <a href="/graphs.html" class="on">Gráficos</a>
+    <a href="/flip.html">Telemóvel</a>
+  </nav>
+</div>
+
+<main>
+  <h1>Tudo o que o escritório produziu</h1>
+  <p class="sub">Números tirados dos ficheiros e do histórico git de cada projeto no vault.</p>
+  <div id="root"></div>
+</main>
+
+<script>
+const root = document.getElementById('root');
+
+const AGENT_COLOR = {
+  'CEO':'#F59E0B','CTO':'#3B82F6','Designer':'#10B981',
+  'Developer':'#8B5CF6','QA Tester':'#EF4444'
+};
+const PALETTE = ['#3B82F6','#10B981','#F59E0B','#8B5CF6','#EF4444','#06B6D4','#EC4899','#84CC16','#F97316','#6366F1'];
+
+const fmtBytes = b => b < 1024 ? b+' B' : b < 1048576 ? (b/1024).toFixed(1)+' KB' : (b/1048576).toFixed(1)+' MB';
+const esc = s => String(s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+
+/* barras horizontais */
+function bars(entries, colorFn, fmt = v => v){
+  if(!entries.length) return '<p style="font-size:13px;color:#93A0B4;margin:0">Ainda sem dados.</p>';
+  const max = Math.max(...entries.map(e => e[1])) || 1;
+  return entries.map(([k,v],i) => `
+    <div class="row">
+      <span class="name">${esc(k)}</span>
+      <span class="track"><i class="fill" style="width:${(v/max*100).toFixed(1)}%;background:${colorFn(k,i)}"></i></span>
+      <span class="val">${fmt(v)}</span>
+    </div>`).join('');
+}
+
+/* área acumulada ao longo do tempo */
+function areaChart(points, w = 520, h = 150){
+  if(points.length < 2) return '<p style="font-size:13px;color:#93A0B4;margin:0">Preciso de pelo menos dois momentos para desenhar isto.</p>';
+
+  const pad = { l:30, r:8, t:8, b:20 };
+  const minX = points[0].x, maxX = points[points.length-1].x;
+  const maxY = Math.max(...points.map(p => p.y)) || 1;
+  const spanX = (maxX - minX) || 1;
+
+  const X = x => pad.l + (x - minX)/spanX * (w - pad.l - pad.r);
+  const Y = y => h - pad.b - (y/maxY) * (h - pad.t - pad.b);
+
+  const line = points.map((p,i) => `${i ? 'L' : 'M'}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join(' ');
+  const area = `${line} L${X(maxX).toFixed(1)},${(h-pad.b).toFixed(1)} L${X(minX).toFixed(1)},${(h-pad.b).toFixed(1)} Z`;
+
+  const dFmt = t => new Date(t).toLocaleDateString('pt-PT',{day:'2-digit',month:'short'});
+
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Commits acumulados ao longo do tempo">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity=".28"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+    </linearGradient></defs>
+    <line class="axis" x1="${pad.l}" y1="${h-pad.b}" x2="${w-pad.r}" y2="${h-pad.b}"/>
+    <line class="axis" x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${h-pad.b}"/>
+    <path d="${area}" fill="url(#g)"/>
+    <path d="${line}" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linejoin="round"/>
+    <text class="glabel" x="${pad.l}" y="${h-6}">${dFmt(minX)}</text>
+    <text class="glabel" x="${w-pad.r}" y="${h-6}" text-anchor="end">${dFmt(maxX)}</text>
+    <text class="glabel" x="${pad.l-6}" y="${pad.t+8}" text-anchor="end">${maxY}</text>
+    <text class="glabel" x="${pad.l-6}" y="${h-pad.b}" text-anchor="end">0</text>
+  </svg>`;
+}
+
+/* anel de composição */
+function donut(entries, size = 168){
+  const total = entries.reduce((s,[,v]) => s+v, 0);
+  if(!total) return '<p style="font-size:13px;color:#93A0B4;margin:0">Ainda sem ficheiros.</p>';
+
+  const R = size/2, r = R*.62, cx = R, cy = R;
+  let a0 = -Math.PI/2;
+
+  const arcs = entries.map(([k,v],i) => {
+    const a1 = a0 + (v/total)*Math.PI*2;
+    const big = (a1-a0) > Math.PI ? 1 : 0;
+    const p = (ang,rad) => `${(cx+Math.cos(ang)*rad).toFixed(2)},${(cy+Math.sin(ang)*rad).toFixed(2)}`;
+    const d = `M${p(a0,R)} A${R},${R} 0 ${big} 1 ${p(a1,R)} L${p(a1,r)} A${r},${r} 0 ${big} 0 ${p(a0,r)} Z`;
+    a0 = a1;
+    return `<path d="${d}" fill="${PALETTE[i % PALETTE.length]}"/>`;
+  }).join('');
+
+  const legend = entries.map(([k,v],i) => `
+    <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin-bottom:5px">
+      <i style="width:9px;height:9px;border-radius:2px;background:${PALETTE[i % PALETTE.length]};flex:none"></i>
+      <span style="flex:1">.${esc(k)}</span>
+      <b style="font-family:'IBM Plex Mono',monospace;font-weight:500">${v}</b>
+    </div>`).join('');
+
+  return `<div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex:none;width:${size}px">
+      ${arcs}
+      <text x="${cx}" y="${cy-2}" text-anchor="middle" style="font:700 22px Inter;fill:#1B2230">${total}</text>
+      <text x="${cx}" y="${cy+15}" text-anchor="middle" style="font:500 10px Inter;fill:#93A0B4">ficheiros</text>
+    </svg>
+    <div style="flex:1;min-width:130px">${legend}</div>
+  </div>`;
+}
+
+
+/* ─────────────────────────────────────────────────────────────
+   Grafo de forças — sem bibliotecas, sem tokens.
+   Nós: plataformas (núcleos), agentes e tipos de ficheiro.
+   Com poucas centenas de nós, comparar todos contra todos é
+   perfeitamente aceitável e evita meter uma Barnes-Hut aqui.
+   ───────────────────────────────────────────────────────────── */
+function construirGrafo(s){
+  const nos = [], arestas = [];
+  const idx = new Map();
+  const add = (id, tipo, r, cor, etiqueta) => {
+    if(idx.has(id)) return idx.get(id);
+    const n = {
+      id, tipo, r, cor, etiqueta,
+      x:(Math.random()-.5)*260, y:(Math.random()-.5)*260, vx:0, vy:0,
+    };
+    idx.set(id, n); nos.push(n); return n;
+  };
+
+  s.projects.forEach((p, i) => {
+    const cor = PALETTE[i % PALETTE.length];
+    const nucleo = add('p:'+p.id, 'projeto', 9, cor, p.name || p.id);
+
+    for(const [ag, n] of Object.entries(p.byAgent || {})){
+      const a = add('a:'+p.id+':'+ag, 'agente', 5.5,
+        AGENT_COLOR[ag] || '#94A3B8', ag + ' · ' + n + ' commits');
+      arestas.push([nucleo, a, 46]);
+
+      // um pontinho por commit: é o que dá a textura de constelação
+      for(let k = 0; k < Math.min(n, 6); k++){
+        const c = add(`c:${p.id}:${ag}:${k}`, 'commit', 2,
+          AGENT_COLOR[ag] || '#94A3B8', ag + ' · commit');
+        arestas.push([a, c, 22]);
+      }
+    }
+
+    for(const [ext, n] of Object.entries(p.byExt || {})){
+      const e = add('e:'+p.id+':'+ext, 'ficheiro', 3 + Math.min(n, 6)*.6,
+        cor, '.' + ext + ' · ' + n + (n === 1 ? ' ficheiro' : ' ficheiros'));
+      arestas.push([nucleo, e, 34]);
+    }
+  });
+
+  // plataformas ligadas entre si: mantém os aglomerados a uma distância
+  // legível uns dos outros em vez de se sobreporem no centro
+  const nucleos = nos.filter(n => n.tipo === 'projeto');
+  for(let i = 0; i < nucleos.length; i++)
+    for(let j = i+1; j < nucleos.length; j++)
+      arestas.push([nucleos[i], nucleos[j], 190]);
+
+  return { nos, arestas };
+}
+
+function desenharGrafo(cv, dados){
+  const ctx = cv.getContext('2d');
+  const info = document.getElementById('grafo-info');
+  const { nos, arestas } = dados;
+  let escala = 1, ox = 0, oy = 0, sobre = null;
+
+  function dimensionar(){
+    const dpr = Math.min(devicePixelRatio, 2);
+    cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  dimensionar(); addEventListener('resize', dimensionar);
+
+  function passo(){
+    // repulsão
+    for(let i = 0; i < nos.length; i++){
+      const a = nos[i];
+      for(let j = i+1; j < nos.length; j++){
+        const b = nos[j];
+        let dx = b.x-a.x, dy = b.y-a.y;
+        let d2 = dx*dx + dy*dy || .01;
+        if(d2 > 62500) continue;              // longe demais para importar
+        const f = 320 / d2;
+        const d = Math.sqrt(d2);
+        const fx = dx/d*f, fy = dy/d*f;
+        a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy;
+      }
+    }
+    // molas
+    for(const [a, b, alvo] of arestas){
+      const dx = b.x-a.x, dy = b.y-a.y;
+      const d = Math.hypot(dx, dy) || .01;
+      const f = (d - alvo) * .012;
+      const fx = dx/d*f, fy = dy/d*f;
+      a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+    }
+    // gravidade central + atrito
+    for(const n of nos){
+      n.vx -= n.x*.0016; n.vy -= n.y*.0016;
+      n.vx *= .86; n.vy *= .86;
+      n.x += n.vx; n.y += n.vy;
+    }
+  }
+  for(let i = 0; i < 260; i++) passo();      // assenta antes do primeiro frame
+
+  function pintar(){
+    const w = cv.clientWidth, h = cv.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    const cx = w/2 + ox, cy = h/2 + oy;
+    const X = n => cx + n.x*escala, Y = n => cy + n.y*escala;
+
+    ctx.lineWidth = 1;
+    for(const [a, b, alvo] of arestas){
+      if(alvo > 150) continue;               // as ligações entre núcleos são só força
+      ctx.strokeStyle = 'rgba(148,163,184,.22)';
+      ctx.beginPath(); ctx.moveTo(X(a), Y(a)); ctx.lineTo(X(b), Y(b)); ctx.stroke();
+    }
+    for(const n of nos){
+      const r = n.r*escala;
+      ctx.beginPath(); ctx.arc(X(n), Y(n), r, 0, 6.2832);
+      ctx.fillStyle = n.cor;
+      ctx.globalAlpha = n.tipo === 'commit' ? .55 : 1;
+      ctx.fill(); ctx.globalAlpha = 1;
+      if(n === sobre || n.tipo === 'projeto'){
+        ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1.5; ctx.stroke();
+      }
+    }
+    // só o núcleo leva texto: rotular tudo dava uma sopa ilegível
+    ctx.font = '600 11px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    for(const n of nos){
+      if(n.tipo !== 'projeto') continue;
+      ctx.fillStyle = 'rgba(255,255,255,.92)';
+      ctx.fillText(String(n.etiqueta).slice(0, 26), X(n), Y(n) - n.r*escala - 7);
+    }
+    requestAnimationFrame(pintar);
+  }
+  pintar();
+
+  cv.addEventListener('mousemove', ev => {
+    const r = cv.getBoundingClientRect();
+    const mx = ev.clientX-r.left, my = ev.clientY-r.top;
+    const cx = cv.clientWidth/2 + ox, cy = cv.clientHeight/2 + oy;
+    sobre = null;
+    let melhor = 14;
+    for(const n of nos){
+      const d = Math.hypot(cx + n.x*escala - mx, cy + n.y*escala - my);
+      if(d < melhor){ melhor = d; sobre = n; }
+    }
+    info.textContent = sobre ? sobre.etiqueta : '';
+  });
+
+  cv.addEventListener('wheel', ev => {
+    ev.preventDefault();
+    escala = Math.max(.4, Math.min(3, escala * (ev.deltaY < 0 ? 1.12 : .89)));
+  }, { passive:false });
+
+}
+
+async function load(){
+  let s;
+  try{
+    s = await (await fetch('/stats')).json();
+  }catch(e){
+    root.innerHTML = `<div class="empty"><b>Não consegui ler as estatísticas</b>${e.message}</div>`;
+    return;
+  }
+
+  if(!s.totals.projects){
+    root.innerHTML = `<div class="empty">
+      <b>Ainda não há nada para mostrar</b>
+      Constrói a primeira plataforma no <a href="/office.html">escritório</a>.
+    </div>`;
+    return;
+  }
+
+  // commits acumulados
+  let acc = 0;
+  const cumulative = s.timeline.map(t => ({ x:t.at, y:++acc }));
+
+  const extEntries    = Object.entries(s.byExt).sort((a,b) => b[1]-a[1]).slice(0,9);
+  const agentEntries  = Object.entries(s.byAgent).sort((a,b) => b[1]-a[1]);
+  const durEntries    = Object.entries(s.avgDuration).sort((a,b) => b[1]-a[1]);
+  const projEntries   = s.projects.map(p => [p.name || p.id, p.files]).sort((a,b) => b[1]-a[1]).slice(0,8);
+
+  const agentColor = k => AGENT_COLOR[k] || '#94A3B8';
+  const mins = sec => sec >= 60 ? `${Math.floor(sec/60)}m${String(sec%60).padStart(2,'0')}s` : `${sec}s`;
+
+  root.innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="n">${s.totals.projects}</div><div class="l">Plataformas</div></div>
+      <div class="kpi"><div class="n">${s.totals.files}</div><div class="l">Ficheiros</div></div>
+      <div class="kpi"><div class="n">${fmtBytes(s.totals.bytes)}</div><div class="l">Código escrito</div></div>
+      <div class="kpi"><div class="n">${s.totals.commits}</div><div class="l">Commits</div></div>
+    </div>
+
+    <div class="cards">
+      <div class="card wide">
+        <h2>Mapa do escritório</h2>
+        <p>Cada plataforma é um núcleo; à volta, os agentes que lhe tocaram
+           e os ficheiros que produziram. Tudo lido do disco e do git —
+           nenhum modelo foi chamado para desenhar isto.</p>
+        <canvas id="grafo" style="width:100%;height:420px;display:block;
+          cursor:grab;border-radius:12px;background:#0F1724"></canvas>
+        <div id="grafo-info" style="margin-top:8px;font-size:12px;color:var(--ink-3);
+          font-family:'IBM Plex Mono',monospace;min-height:16px"></div>
+      </div>
+
+      <div class="card wide">
+        <h2>Ritmo de produção</h2>
+        <p>Commits acumulados desde o primeiro projeto.</p>
+        ${areaChart(cumulative)}
+      </div>
+
+      <div class="card">
+        <h2>Quem entregou o quê</h2>
+        <p>Commits por agente, em todos os projetos.</p>
+        ${bars(agentEntries, agentColor)}
+      </div>
+
+      <div class="card">
+        <h2>Tempo médio por etapa</h2>
+        <p>Quanto demora cada agente a fazer a sua parte.</p>
+        ${bars(durEntries, agentColor, mins)}
+      </div>
+
+      <div class="card">
+        <h2>Composição do código</h2>
+        <p>Ficheiros por extensão.</p>
+        ${donut(extEntries)}
+      </div>
+
+      <div class="card">
+        <h2>Maiores plataformas</h2>
+        <p>Por número de ficheiros.</p>
+        ${bars(projEntries, (_,i) => PALETTE[i % PALETTE.length])}
+      </div>
+    </div>`;
+
+  const cv = document.getElementById('grafo');
+  if(cv) desenharGrafo(cv, construirGrafo(s));
+}
+
+load();
+</script>
+</body>
+</html>

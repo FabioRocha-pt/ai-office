@@ -1,3 +1,8 @@
+// PRIMEIRA linha de tudo: os segredos têm de estar no ambiente antes de
+// qualquer módulo os ir procurar ao carregar.
+const { carregar: carregarEnv, FICHEIRO: ENV_FILE } = require("./agents/env");
+const env = carregarEnv();
+
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
@@ -8,21 +13,60 @@ const { ROLES } = require("./agents/roles");
 const { runAgent } = require("./agents/runner");
 const { runPipeline, reviseProject, isRunning, forceReset, current } = require("./agents/pipeline");
 const vault = require("./agents/vault");
+const stacks = require("./agents/stacks");
+const { espacoLivreMB, MIN_DISCO_MB } = require("./agents/build");
 const assignments = require("./agents/assignments");
 const models = require("./agents/models");
 const preview = require("./agents/preview");
+const auth = require("./agents/auth");
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// CORS restrito. Antes era cors() aberto: qualquer site podia mandar
+// pedidos ao orchestrator a partir do browser de quem o visitasse. Só
+// origens explicitamente autorizadas passam, e por omissão nenhuma —
+// o painel é servido pelo próprio orchestrator e não precisa de CORS.
+const ORIGENS = (process.env.OFFICE_CORS_ORIGINS || "")
+  .split(",").map((o) => o.trim()).filter(Boolean);
+app.use(cors({
+  origin: ORIGENS.length ? ORIGENS : false,
+  credentials: true,
+}));
+
+// Corpo limitado: sem isto, um POST de 500 MB enche a memória do processo.
+app.use(express.json({ limit: "1mb" }));
+
+// Cabeçalhos de defesa. Não substituem autenticação, mas reduzem o que
+// um problema no HTML de uma plataforma consegue fazer.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
 
 // Guarda o host para construir URLs de projetos Node
 app.use((req, _res, next) => { preview.setHost(req.headers.host); next(); });
 
+// A AUTENTICAÇÃO VEM ANTES DOS FICHEIROS ESTÁTICOS. Ao contrário, o
+// painel e o vault ficariam acessíveis a qualquer pessoa e só a API
+// estaria protegida — que foi exatamente o erro que quase cometi aqui.
+app.use(auth.middleware);
+
 app.use(express.static(path.join(__dirname, "public")));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// noServer + verificação manual: o WebSocketServer normal aceita o
+// handshake antes de nós vermos quem é. Assim autenticamos primeiro.
+const wss = new WebSocketServer({ noServer: true });
+
+server.on("upgrade", (req, socket, head) => {
+  if (!auth.autorizado(req)) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    return socket.destroy();
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+});
 
 // Traz o projeto antigo (ai-office/project) para dentro do vault
 vault.migrateLegacy();
@@ -89,6 +133,51 @@ app.post("/assignments", (req, res) => {
 
 app.post("/assignments/reset", (req, res) => {
   res.json({ assignments: assignments.reset() });
+});
+
+/* ---------------- dispositivos (biometria no telemóvel) ---------------- */
+
+// Trocar credenciais por um token de longa duração. Só por Basic: um
+// token não pode gerar outro token, senão um telemóvel roubado
+// conseguia multiplicar-se e a revogação deixava de valer.
+app.post("/auth/token",
+  auth.limitar({ max: 5, janelaMs: 15 * 60 * 1000,
+    mensagem: "Demasiadas tentativas de emparelhamento. Espera 15 minutos." }),
+  (req, res) => {
+    if (!auth.configurado()) {
+      return res.status(400).json({
+        error: "Define OFFICE_PASSWORD antes de emparelhar dispositivos.",
+      });
+    }
+    if (!auth.credenciaisValidas(req)) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="AI Office"');
+      return res.status(401).json({ error: "Credenciais inválidas." });
+    }
+    const { token, id, expira } = auth.criarTokenDispositivo(req.body?.etiqueta);
+    // O token vai UMA vez. Não é recuperável: perdido, emparelha-se de novo.
+    res.json({ token, id, expira: new Date(expira).toISOString() });
+  });
+
+app.get("/auth/devices", (req, res) => {
+  res.json({ dispositivos: auth.listarDispositivos() });
+});
+
+// O que salva o dia em que o telemóvel desaparecer.
+app.post("/auth/devices/:id/revogar", (req, res) => {
+  const ok = auth.revogarDispositivo(req.params.id);
+  if (!ok) return res.status(404).json({ error: "Dispositivo desconhecido." });
+  res.json({ revogado: req.params.id });
+});
+
+app.get("/stacks", (req, res) => {
+  const livre = espacoLivreMB(__dirname);
+  res.json({
+    stacks: stacks.listar(),
+    defeito: stacks.DEFEITO,
+    // Ficar sem disco a meio de um npm install é dos piores sítios onde
+    // se pode falhar: o painel avisa antes de deixar escolher.
+    disco: { livreMB: livre, minimoMB: MIN_DISCO_MB, chega: livre === null || livre >= MIN_DISCO_MB },
+  });
 });
 
 app.get("/models", (req, res) => {
@@ -175,25 +264,41 @@ app.post("/task/:agentId", async (req, res) => {
 function pipelineHooks() {
   return {
     onProject: (meta) => broadcast({ type: "pipeline", phase: "start", project: meta }),
-    onAgentStart: (id, projectId) => {
-      state[id].status = "working";
-      broadcast({ type: "status", agentId: id, status: "working", projectId });
+    // O pipeline emite etapas que NÃO são agentes — o "build", por
+    // exemplo. Escrever em state[id] às cegas rebentava com TypeError
+    // (state vem dos ROLES e não tem "build"), e a exceção matava o
+    // pipeline a meio: sem build, sem QA, e o projeto fechado como
+    // concluído. Um hook de notificação nunca deve poder abortar o
+    // trabalho que está a notificar.
+    onAgentStart: (id, projectId, escolha) => {
+      if (state[id]) state[id].status = "working";
+      broadcast({ type: "status", agentId: id, status: "working", projectId, ...escolha });
     },
     onAgentChunk: (id, chunk) => broadcast({ type: "stream", agentId: id, chunk }),
     onAgentDone: (id, output) => {
-      state[id].status = "done";
-      state[id].lastOutput = output;
+      if (state[id]) { state[id].status = "done"; state[id].lastOutput = output; }
       broadcast({ type: "status", agentId: id, status: "done", output });
     },
     onAgentError: (id, error) => {
-      state[id].status = "error";
+      if (state[id]) state[id].status = "error";
       broadcast({ type: "status", agentId: id, status: "error", error });
     },
   };
 }
 
-app.post("/pipeline", (req, res) => {
-  const { brief, complexity } = req.body;
+// Construir custa quota e tempo; apagar é irreversível. São estes dois
+// que interessa travar, não os GET de leitura.
+const travaoConstrucao = auth.limitar({
+  max: 6, janelaMs: 10 * 60 * 1000,
+  mensagem: "Demasiadas construções seguidas. Espera um pouco.",
+});
+const travaoGeral = auth.limitar({
+  max: 60, janelaMs: 60 * 1000,
+  mensagem: "Demasiados pedidos. Espera um minuto.",
+});
+
+app.post("/pipeline", travaoConstrucao, (req, res) => {
+  const { brief, complexity, stack } = req.body;
 
   if (!brief || typeof brief !== "string") {
     return res.status(400).json({ error: "Campo 'brief' (string) é obrigatório" });
@@ -204,7 +309,7 @@ app.post("/pipeline", (req, res) => {
 
   res.json({ accepted: true });
 
-  runPipeline(brief, pipelineHooks(), { complexity })
+  runPipeline(brief, pipelineHooks(), { complexity, stack })
     .then((meta) => broadcast({ type: "pipeline", phase: "end", project: meta }))
     .catch((err) => broadcast({ type: "pipeline", phase: "end", error: err.message }));
 });
@@ -358,4 +463,12 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`AI Office orchestrator a correr em http://0.0.0.0:${PORT}`);
   console.log(`Vault: ${vault.VAULT_DIR}`);
+  console.log(auth.configurado()
+    ? `Autenticação: ativa (utilizador "${auth.UTILIZADOR()}")`
+    : `AUTENTICAÇÃO DESLIGADA — qualquer pessoa com o IP pode usar isto. ` +
+      `Define OFFICE_PASSWORD no .env.`);
+  // Diz QUANTOS segredos leu e QUAIS existem — nunca os valores.
+  console.log(env.existe
+    ? `Segredos: ${env.carregadas} de ${ENV_FILE}`
+    : `Sem ${ENV_FILE} (as chaves de Stripe e Sanity ficam por definir)`);
 });

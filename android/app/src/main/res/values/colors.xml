@@ -1,3 +1,10 @@
 <resources>
-    <color name="ic_launcher_background">#0B0D11</color>
+    <!-- Fundo do ícone adaptativo: quase preto, para as pétalas ciano
+         saltarem. O mesmo tom do ecrã de arranque, para a app parecer
+         contínua desde o ícone até dentro. -->
+    <color name="ic_launcher_background">#04070F</color>
+    <color name="daisy_fundo">#04070F</color>
+    <color name="daisy_ciano">#00E5FF</color>
+    <color name="daisy_ciano_claro">#7DF9FF</color>
+    <color name="daisy_esmeralda">#34D399</color>
 </resources>

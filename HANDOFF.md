@@ -7,7 +7,8 @@ longa, com o que custou a descobrir e o que vem a seguir.
 `github.com/FabioRocha-pt/ai-office`. O utilizador é o Fábio, fala
 português de Portugal, e o código e comentários estão todos em português.
 
-**Próxima tarefa:** suporte a Next.js. Plano concreto no fim deste ficheiro.
+**Próxima tarefa:** Sanity e mobile. O suporte a stacks/Next.js está FEITO —
+ver secção «Stacks» abaixo.
 
 ---
 
@@ -172,7 +173,52 @@ para instalar dependências (ver plano abaixo).
 
 ---
 
-## Próxima tarefa: suporte a Next.js
+---
+
+## Stacks (feito)
+
+O CTO deixou de inventar arquitetura: escolhe de um catálogo fechado em
+`agents/stacks.js`. Cada entrada traz os ficheiros do scaffold, os comandos
+de build, o que conta como entrega e os segredos que precisa.
+
+Existem hoje: `estatico` (o de sempre, por omissão), `nextjs-export`
+(exportado para `out/`), `nextjs-server` (rotas de API) e
+`nextjs-pagamentos` (Stripe Checkout).
+
+Peças novas:
+
+- `agents/stacks.js` — catálogo e scaffolding. Acrescentar uma stack é uma
+  entrada aqui; o pipeline não precisa de saber que ela existe.
+- `agents/build.js` — etapa mecânica entre Developer e QA. `npm install` +
+  `npm run build`, timeout próprio de 20 min, e **recusa começar com menos
+  de 2 GB livres** em vez de encher o disco a meio.
+- `pipeline.js` — scaffold antes do primeiro agente; build depois do
+  Developer; se o build falhar, o Developer recebe o erro do compilador e
+  tem uma segunda tentativa, e só depois se desiste.
+- `vault.js` — `detectEntry()` procura `out/index.html` primeiro, e
+  distingue `porconstruir` (há package.json com build mas nada compilado)
+  de `none`.
+- `GET /stacks` — catálogo, espaço em disco e se os segredos existem.
+  `POST /pipeline` aceita `stack`.
+
+Verificado a sério: o scaffold `nextjs-export` instala (99 pacotes, 20 s) e
+compila (Next 14.2.35), produzindo `out/index.html`. Os `node_modules` são
+259 MB e o `out/` 768 KB — daí apagarem-se automaticamente no fim das
+stacks de export (`limparNodeModules: true`). Nas stacks com servidor NÃO
+se apagam, senão o `npm start` deixa de arrancar.
+
+### Cuidados
+
+- Versões **fixadas** de propósito no scaffold. Tailwind fica no 3.x: o 4
+  mudou a configuração e deixaria de bater certo com o `tailwind.config.js`.
+- Chaves do Stripe vêm do ambiente do orchestrator, nunca do repositório do
+  projeto. Sem elas a plataforma compila na mesma e o checkout responde 503
+  com mensagem clara.
+- Os preços estão em **cêntimos** no `config/produtos.js`. O Stripe trabalha
+  na unidade mínima da moeda e usar euros com vírgula flutuante dá erros de
+  arredondamento reais em faturação.
+
+## Plano original do Next.js (cumprido — mantido por contexto)
 
 O objetivo do utilizador é sair do "HTML/CSS/JS puro" para plataformas
 premium com frameworks. Ele mencionou também Sanity e Flutter — a
@@ -269,3 +315,137 @@ mobile, PWA em Next.js dá quase tudo sem perder o preview.
   `/download/consultoria.apk`
 - **Modelos e atribuições:** `models.json` e `assignments.json` na raiz,
   fora do repositório
+
+---
+
+## D.A.I.S.Y. — biometria no telemóvel (servidor FEITO, app por ligar)
+
+O nome: Margarida = daisy. Em 1961 um IBM 704 nos Bell Labs cantou
+"Daisy Bell", a primeira sintese de voz de uma musica por computador —
+e e por isso que o HAL 9000 a canta enquanto morre.
+
+### O que a biometria faz e nao faz
+
+A impressao digital NAO autentica no servidor e nunca sai do telemovel.
+Ela desbloqueia uma chave AES no Keystore do Android, e essa chave
+decifra um token de acesso. O servidor so ve o token. Por isso a
+revogacao nao e um extra: e o unico recurso se o telemovel se perder.
+
+### Servidor (feito e testado)
+
+- `POST /auth/token` — Basic obrigatorio, devolve um token de 180 dias.
+  Um token NAO pode gerar outro token: senao um telemovel roubado
+  multiplicava-se e a revogacao deixava de valer. Travao de 5 tentativas
+  por 15 minutos.
+- `GET /auth/devices` — lista com etiqueta, criado, ultimo uso.
+- `POST /auth/devices/:id/revogar` — corta o acesso na hora.
+- `agents/auth.js` aceita o token por `Authorization: Bearer` OU pelo
+  cookie `office_sess` (o WebView do Android nao deixa por cabecalhos em
+  todos os pedidos, mas deixa por cookie).
+- `dispositivos.json` guarda apenas METADADOS. O token nunca e gravado:
+  quem ler o ficheiro nao consegue entrar com o que la esta.
+
+Testado: emparelhar sem credenciais da 401; com credenciais devolve
+token; o token funciona como Bearer e como cookie; depois de revogado
+da 401.
+
+### App (falta ligar)
+
+`android/.../BiometricAuth.kt` esta escrito e comentado. Faz:
+`disponivel()`, `motivoIndisponivel()`, `temTokenGuardado()`,
+`guardar(activity, token, cb)`, `desbloquear(activity, cb)`,
+`esquecer(ctx)`.
+
+Dependencia ja adicionada: `androidx.biometric:biometric:1.1.0`.
+`AppCompatActivity` ja estende `FragmentActivity`, que e o que o
+BiometricPrompt exige — nao ha nada a mudar na hierarquia.
+
+Falta no MainActivity.kt:
+
+1. No arranque: se `temTokenGuardado()` -> `desbloquear()`; senao
+   mostrar o ecra de credenciais.
+2. Depois de obter o token do `/auth/token`, chamar `guardar()`.
+3. Com o token em mao, po-lo no CookieManager antes de carregar o
+   WebView:
+   `CookieManager.getInstance().setCookie(baseUrl, "office_sess=$token; Path=/")`
+   e `CookieManager.getInstance().flush()`.
+4. Se o servidor devolver 401, chamar `esquecer()` e voltar ao ecra de
+   credenciais.
+
+### Cuidados
+
+- `setInvalidatedByBiometricEnrollment(true)`: registar uma impressao
+  digital nova invalida a chave DE PROPOSITO. Sem isto, quem tivesse o
+  telemovel desbloqueado podia adicionar o proprio dedo e entrar. Quando
+  isso acontece, a app pede as credenciais outra vez — nao e bug.
+- So `BIOMETRIC_STRONG`. Aceitar credenciais do aparelho (PIN) faz o
+  CryptoObject deixar de funcionar.
+- `setUserAuthenticationParameters(0, ...)`: autenticacao a CADA uso.
+
+### Nao alterado de proposito
+
+O package Java continua `com.bonako.aioffice`. Mudar o package altera
+caminhos, gradle e assinatura do APK — instalacoes existentes deixariam
+de atualizar e passariam a aparecer duas apps. O nome visivel ja e
+D.A.I.S.Y. (strings.xml). Se quiseres mudar mesmo o package, e uma
+tarefa a fazer isolada, com a keystore de assinatura a mao.
+
+---
+
+## App nativa D.A.I.S.Y. (reescrita)
+
+O ecra preto tinha duas causas, ambas fechadas:
+
+1. **401 em silencio.** Com a autenticacao ligada, o WebView recebia 401
+   e nao mostrava nada. Pior: num 401 com WWW-Authenticate o WebView
+   chama `onReceivedHttpAuthRequest` e a implementacao por omissao
+   CANCELA SEM DIZER NADA (isto ja estava documentado no Sessao.kt).
+2. **Nenhum caminho de erro tinha UI.** Falha de rede, servidor em
+   baixo, token revogado — tudo dava o mesmo ecra escuro.
+
+Regra nova: NUNCA um ecra preto sem explicacao. Todos os caminhos de
+falha acabam num painel nativo com o motivo e dois botoes ("Tentar outra
+vez" e "Introduzir credenciais").
+
+### Ficheiros
+
+- `DaisyBootView.kt` — arranque desenhado em Canvas: 12 petalas que
+  abrem com atraso proprio, dois aneis a rodar em sentidos opostos,
+  varrimento tipo radar, miolo com estames, nome a compor-se letra a
+  letra, log e barra de progresso REAL (reflete o estado da
+  autenticacao, nao e decorativa). Nativo de proposito: tem de aparecer
+  antes de existir ligacao ao servidor.
+- `MainActivity.kt` — reescrito. Maquina de estados: arranque ->
+  biometria ou credenciais -> cookie -> WebView. UI construida em codigo
+  em vez de XML (nao ha layouts para desalinhar com IDs).
+- `BiometricAuth.kt` — Keystore + BiometricPrompt (ja existia).
+- `Sessao.kt` — emparelhamento e cookie (ja existia; o MainActivity usa
+  este e nao uma copia).
+- `res/drawable/daisy_logo.xml` e `ic_launcher_foreground.xml` — vetor:
+  margarida e diafragma de lente ao mesmo tempo.
+- Tema: `windowBackground` igual ao fundo do arranque, para nao haver o
+  clarao branco de um frame antes de a activity desenhar.
+
+### VPS fixa
+
+`MainActivity.URL_PADRAO = "http://169.58.37.101:3000"`, editavel no
+painel de credenciais e guardado em SharedPreferences.
+
+### Nao verificado
+
+NAO consigo compilar Android aqui (sem SDK). Verifiquei: equilibrio de
+chaves e parenteses, referencias cruzadas entre os quatro ficheiros
+Kotlin, e XML valido nos recursos. O compilador do GitHub Actions e que
+tem a palavra final — o artefacto passou a chamar-se `daisy-apk`.
+
+### Primeiro arranque esperado
+
+1. Animacao ~2,3s (minimo garantido, para nao ser engolida).
+2. Painel de credenciais: URL ja preenchido, utilizador `fabio`, password.
+3. "Emparelhar aparelho" -> POST /auth/token -> token de 180 dias.
+4. BiometricPrompt para GUARDAR (confirma logo que o sensor funciona).
+5. Painel carrega.
+6. Arranques seguintes: so a impressao digital.
+
+Se o dispositivo aparecer em `GET /auth/devices` com a etiqueta
+"samsung SM-F741..." entao o emparelhamento funcionou.

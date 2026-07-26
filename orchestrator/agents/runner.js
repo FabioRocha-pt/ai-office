@@ -9,6 +9,7 @@
 const { spawn, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 // Cada CLI corre em modo não-interativo COM PERMISSÃO DE ESCRITA na pasta
 // do projeto — sem isso os agentes não conseguem produzir ficheiros e o
@@ -95,7 +96,7 @@ const CLI_COMMANDS = {
 const FATAL_PATTERNS = [
   { re: /model is not supported|model metadata for .* not found|unknown model|model not found/i,
     hint: "Nome de modelo inválido para esta conta. Corrige em models.json." },
-  { re: /usage limit|rate limit|quota exceeded|insufficient credit|out of credit|billing/i,
+  { re: /usage limit|rate limit|session limit|quota exceeded|insufficient credit|out of credit|billing|hit your (session|usage) limit/i,
     hint: "Créditos ou limite de utilização esgotados. Muda este agente de CLI no painel." },
   { re: /not authenticated|please log ?in|authentication failed|invalid api key/i,
     hint: "Sessão expirada. Volta a autenticar esta CLI na VPS." },
@@ -159,7 +160,61 @@ const DENIED_RULES = [
   "Read(./.env)", "Read(./.env.*)",
 ];
 
+/**
+ * Marca o workspace como confiado no ~/.claude.json.
+ *
+ * Sem isto, o Claude Code IGNORA o settings.json inteiro e diz:
+ *   "Ignoring 34 permissions.allow entries from .claude/settings.json:
+ *    this workspace has not been trusted."
+ *
+ * O aviso vai para stderr, o agente arranca na mesma e depois recusa
+ * todos os comandos — parece um problema de permissões mal escritas,
+ * quando o problema é a pasta nunca ter passado pelo diálogo de confiança.
+ * E como cada plataforma do vault é uma pasta nova, aconteceria sempre.
+ *
+ * A alternativa manual seria abrir o Claude Code interativamente em cada
+ * projeto e aceitar o diálogo, o que num escritório autónomo não existe.
+ */
+function trustWorkspace(dir) {
+  const ficheiro = path.join(os.homedir(), ".claude.json");
+  const abs = path.resolve(dir);
+
+  try {
+    let config = {};
+    if (fs.existsSync(ficheiro)) {
+      // Ler-modificar-escrever: este ficheiro tem a configuração toda do
+      // Claude Code do utilizador. Substituí-lo apagaria sessões, MCPs e
+      // histórico — só se acrescenta a entrada deste projeto.
+      try {
+        config = JSON.parse(fs.readFileSync(ficheiro, "utf8")) || {};
+      } catch {
+        console.warn("[runner] ~/.claude.json ilegível; não mexo nele.");
+        return false;
+      }
+    }
+
+    config.projects = config.projects || {};
+    const atual = config.projects[abs] || {};
+    if (atual.hasTrustDialogAccepted === true) return true;
+
+    config.projects[abs] = { ...atual, hasTrustDialogAccepted: true };
+
+    // Escrita atómica: um corte a meio deste ficheiro deixaria o Claude
+    // Code do utilizador sem configuração nenhuma.
+    const temp = ficheiro + ".tmp";
+    fs.writeFileSync(temp, JSON.stringify(config, null, 2));
+    fs.renameSync(temp, ficheiro);
+    return true;
+  } catch (e) {
+    console.warn(`[runner] não consegui marcar ${abs} como confiado: ${e.message}`);
+    return false;
+  }
+}
+
 function writeClaudeSettings(dir) {
+  // A confiança vem primeiro: sem ela o settings.json abaixo é decorativo.
+  trustWorkspace(dir);
+
   const settingsDir = path.join(dir, ".claude");
   const settingsFile = path.join(settingsDir, "settings.json");
   if (fs.existsSync(settingsFile)) return; // não sobrescreve ajustes teus

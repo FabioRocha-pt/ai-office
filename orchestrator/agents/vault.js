@@ -122,7 +122,13 @@ function gitStats(dir) {
 
 /** Descobre como o projeto se pode abrir. */
 function detectEntry(dir) {
-  const candidates = ["public/index.html", "index.html", "dist/index.html", "src/index.html"];
+  // 'out/' primeiro: num projeto Next.js exportado é essa a entrega
+  // real, e existe muitas vezes ao lado de um public/ com ícones que
+  // não é a aplicação.
+  const candidates = [
+    "out/index.html", "build/index.html", "dist/index.html",
+    "public/index.html", "index.html", "src/index.html",
+  ];
   for (const rel of candidates) {
     if (fs.existsSync(path.join(dir, rel))) {
       return { type: "static", root: path.dirname(rel) === "." ? "" : path.dirname(rel) };
@@ -133,6 +139,10 @@ function detectEntry(dir) {
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
       if (pkg.scripts?.start) return { type: "node", script: "start" };
+      // Há package.json e um build por correr: não é entrega, mas
+      // também não é "nada" — distingue-se para o painel poder dizer
+      // que falta compilar em vez de "sem entrega".
+      if (pkg.scripts?.build) return { type: "porconstruir", script: "build" };
     } catch {}
   }
   return { type: "none" };

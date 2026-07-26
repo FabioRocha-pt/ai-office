@@ -4,6 +4,14 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <!-- BiometricPrompt: permissão normal, concedida na instalação.
+         Sem ela, alguns fabricantes recusam o prompt em silêncio. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+
+    <!-- O sensor não é obrigatório: sem ele a app pede as credenciais
+         a cada arranque em vez de se recusar a instalar. -->
+    <uses-feature android:name="android.hardware.fingerprint" android:required="false"/>
+
     <!-- Sem isto o Android 11+ não deixa ver o serviço de reconhecimento
          de voz, e o SpeechRecognizer devolve sempre erro. -->
     <queries>

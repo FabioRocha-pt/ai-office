@@ -223,7 +223,7 @@
 <body>
 
 <div class="top">
-  <div class="logo">AI Office <span>· Consultoria Bonako</span></div>
+  <div class="logo">D.A.I.S.Y. <span>· Fábio Rocha</span></div>
   <span class="pill"><i class="dot" id="conn-dot"></i><span id="conn">a ligar</span></span>
   <span class="pill" id="busy">0 agentes ativos</span>
   <nav class="nav">
@@ -245,6 +245,11 @@
   <div class="dash-sec">
     <h2>Equipa</h2>
     <div id="agent-list"></div>
+    <div class="tierbox">
+      <select id="stack" title="Que tipo de plataforma a equipa vai construir.">
+        <option value="">Stack: a carregar…</option>
+      </select>
+    </div>
     <div class="tierbox">
       <select id="cx" title="Define o escalão de modelo de cada agente.">
         <option value="auto">Complexidade: automática</option>
@@ -1063,6 +1068,7 @@ async function refreshPlan(){
 async function build(){
   const brief = ui.brief.value.trim(); if(!brief){ ui.brief.focus(); return; }
   const complexity = document.getElementById('cx')?.value || 'auto';
+  const stack = document.getElementById('stack')?.value || 'estatico';
   for(const d of Object.values(desks)){ d.lastOutput = ''; setStatus(d.id ?? '', 'idle'); }
   ui.conBody.textContent = '';
   setPipelineUI(true);
@@ -1070,7 +1076,7 @@ async function build(){
   try{
     const r = await fetch('/pipeline', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ brief, complexity })
+      body: JSON.stringify({ brief, complexity, stack })
     });
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || 'Não foi aceite.');
   }catch(e){ setPipelineUI(false); ui.progLabel.textContent = e.message; }
@@ -1079,6 +1085,30 @@ ui.brief.addEventListener('input', () => {
   clearTimeout(planTimer); planTimer = setTimeout(refreshPlan, 350);
 });
 document.getElementById('cx')?.addEventListener('change', refreshPlan);
+
+/* Catálogo de stacks. O aviso de disco não é decorativo: um npm install
+   sem espaço deixa a pasta a meio e enche a VPS. */
+(async () => {
+  const sel = document.getElementById('stack');
+  if(!sel) return;
+  try{
+    const j = await (await fetch('/stacks')).json();
+    sel.innerHTML = j.stacks.map(s => {
+      const precisaBuild = s.id !== 'estatico';
+      const bloqueada = (precisaBuild && !j.disco.chega) || !s.prontaParaUsar;
+      const nota = !s.prontaParaUsar ? ' — faltam chaves'
+                 : (precisaBuild && !j.disco.chega) ? ' — sem espaço em disco' : '';
+      return `<option value="${s.id}" ${s.id===j.defeito?'selected':''}
+                ${bloqueada?'disabled':''} title="${s.quando.replace(/"/g,'&quot;')}"
+              >${s.label}${nota}</option>`;
+    }).join('');
+    if(j.disco.livreMB !== null && !j.disco.chega){
+      sel.title = `Só ${j.disco.livreMB} MB livres; são precisos ${j.disco.minimoMB} MB.`;
+    }
+  }catch{
+    sel.innerHTML = '<option value="estatico">HTML/CSS/JS</option>';
+  }
+})();
 ui.go.addEventListener('click', build);
 ui.brief.addEventListener('keydown', e => { if(e.key === 'Enter') build(); });
 

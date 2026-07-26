@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">Consultoria</string>
+    <string name="app_name">D.A.I.S.Y.</string>
+    <string name="bio_titulo">D.A.I.S.Y.</string>
+    <string name="bio_subtitulo">Impressão digital para entrar</string>
 </resources>

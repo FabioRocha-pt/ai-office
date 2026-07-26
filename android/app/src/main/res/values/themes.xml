@@ -1,7 +1,12 @@
 <resources>
     <style name="Theme.AIOffice" parent="Theme.AppCompat.NoActionBar">
-        <item name="android:windowBackground">@android:color/black</item>
-        <item name="android:statusBarColor">@android:color/black</item>
-        <item name="android:navigationBarColor">@android:color/black</item>
+        <!-- windowBackground igual ao fundo do arranque: evita o clarão
+             branco de um frame que o Android mostra antes da activity
+             desenhar, e que estraga a entrada. -->
+        <item name="android:windowBackground">@color/daisy_fundo</item>
+        <item name="android:statusBarColor">@color/daisy_fundo</item>
+        <item name="android:navigationBarColor">@color/daisy_fundo</item>
+        <item name="android:colorAccent">@color/daisy_ciano</item>
+        <item name="android:textColorHighlight">#1E3A47</item>
     </style>
 </resources>

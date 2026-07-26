@@ -54,7 +54,13 @@ function launch(id) {
     proc.on("close", () => running.delete(id));
 
     running.set(id, { port, proc, startedAt: Date.now() });
-    return { type: "node", url: `http://${hostOf()}:${port}`, port };
+    // O aviso da firewall vai junto com o URL: é aqui que a pessoa
+    // descobre que o link não abre, e o motivo não é adivinhável.
+    return {
+      type: "node", url: `http://${hostOf()}:${port}`, port,
+      aviso: `Se o link não abrir, a porta ${port} está fechada na firewall. ` +
+             `Na VPS: ufw allow ${PORT_MIN}:${PORT_MAX}/tcp`,
+    };
   }
 
   throw new Error(

@@ -56,19 +56,34 @@ orchestrator/
     vault.js         projetos, metadados, estatísticas, deteção de entrada
     preview.js       servir plataformas construídas
   public/
-    office.html      escritório 3D (Three.js) — ecrã grande
+    office.html      escritório 3D (Three.js inline) — ecrã grande
     flip.html        app do Z Flip: robôs 2D + voz + vault + config
     robots.js        os cinco robôs em SVG animado
-    office3d.js      cena 3D (só usada pelo office.html)
+    office3d.js      CÓDIGO MORTO — nada o importa (ver abaixo)
     vault.html       plataformas: abrir, corrigir, apagar
     graphs.html      estatísticas em SVG feito à mão
     index.html       primeira interface, mantida
+    modelos/*.glb    modelos do Meshy, JÁ NÃO USADOS (ver abaixo)
 android/             app Android em Jetpack Compose (WebView só no preview)
 deploy/              setup-vps.sh, build-apk.sh, fetch-vendor.sh
 ```
 
 Fora do repositório (gerados, no `.gitignore`): `vault/`,
 `assignments.json`, `models.json`, `node_modules/`, `public/vendor/`.
+
+Duas armadilhas nesta árvore, ambas verificadas com `grep`:
+
+- **`office3d.js` não é a cena do `office.html`.** Esta linha já disse
+  isso e induziu em erro pelo menos uma sessão. É a cena em miniatura
+  que se escreveu para a Flex Window do Z Flip, e neste momento nada a
+  importa — a cena do `office.html` é inline, com importmap para o
+  unpkg. Apaga-o ou liga-o ao `flip.html`, mas não o edites à espera de
+  mexer no escritório grande.
+- **`public/modelos/*.glb` já não são carregados.** São 6.8 MB de robô e
+  mobiliário gerados no Meshy que o escritório usou durante 2026-07-26 e
+  deixou de usar quando se voltou ao escritório cartoon procedural.
+  Ficam versionados porque os URLs de download do Meshy expiram e
+  regerá-los custa créditos. Ver `CONTINUIDADE-ESCRITORIO.md`.
 
 ---
 

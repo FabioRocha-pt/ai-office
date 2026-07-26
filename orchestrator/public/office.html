@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Escritório — AI Office</title>
+<link rel="icon" href="/icon.svg">
 <script src="/tema.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -372,7 +373,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const ACCENT = { ceo:0xF59E0B, cto:0x3B82F6, designer:0x10B981, developer:0x8B5CF6, qa:0xEF4444 };
 const HEX    = { ceo:'#F59E0B', cto:'#3B82F6', designer:'#10B981', developer:'#8B5CF6', qa:'#EF4444' };
@@ -387,11 +388,39 @@ scene.fog = new THREE.Fog(0xEDF1F7, 34, 70);
 const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, .1, 200);
 camera.position.set(-2, 13, 19.5);
 
-const renderer = new THREE.WebGLRenderer({ antialias:true });
+/* ═══════════════════════════════════════════════════════════════
+   ORÇAMENTO DE DESENHO
+
+   Esta cena tem de correr a 30 fps com WebGL POR SOFTWARE, numa
+   máquina sem aceleração gráfica. É um número que se mede, não um
+   desejo: `node tools/medir-cena.js <url> 25`, com o Chrome em
+   `--disable-gpu --enable-unsafe-swiftshader`.
+
+   O aspeto — toon shading, contornos de desenho animado, cantos
+   arredondados, robôs lustrosos — é o ponto. NÃO se toca nele. O que
+   saiu foi só o que custava e não se via:
+
+     mapa de sombras 2048²  → manchas suaves no chão (`sombra()`).
+       Um mapa de sombras desenha a cena INTEIRA outra vez; era
+       metade do trabalho por frame. As manchas dão o mesmo
+       assentamento a esta distância de câmara.
+     5 PointLight de candeeiro → o bolbo emissivo, que já lá estava.
+       Cada luz multiplica o custo por fragmento em TODOS os
+       materiais da cena, não só perto dela.
+     165 teclas soltas, 25 peças de cadeira, 25 folhas de planta e
+       os contornos um a um → fundidos por material com
+       mergeGeometries. Pixel a pixel é o mesmo desenho.
+     antialias → em software é dos itens mais caros que há.
+
+   Mede antes e depois de qualquer mexida. Ver CONTINUIDADE-ESCRITORIO.md.
+   ═══════════════════════════════════════════════════════════════ */
+const renderer = new THREE.WebGLRenderer({ antialias:false, powerPreference:'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+/* 1.5 e não 2: em software o custo é linear no número de píxeis, e num
+   ecrã já a 2× seriam quatro vezes o trabalho. Fixá-lo em 1 deixava a
+   imagem mole num Windows a 150%, que é comum. Se a máquina não
+   aguentar, é o vigia no fim do ficheiro que o desce. */
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 document.body.appendChild(renderer.domElement);
@@ -404,76 +433,71 @@ controls.maxPolarAngle = Math.PI/2.2;
 controls.minDistance = 7;
 controls.maxDistance = 34;
 
-/* luz suave de escritório */
+/* Luz suave de escritório: três, e nenhuma faz sombra. Os candeeiros
+   das secretárias eram mais cinco PointLight — ver o orçamento acima. */
 scene.add(new THREE.HemisphereLight(0xFFFFFF, 0xD6DEEA, 1.05));
 const key = new THREE.DirectionalLight(0xFFFFFF, 1.5);
 key.position.set(9, 17, 9);
-key.castShadow = true;
-key.shadow.mapSize.set(2048,2048);
-key.shadow.camera.left=-20; key.shadow.camera.right=20;
-key.shadow.camera.top=20; key.shadow.camera.bottom=-20;
-key.shadow.bias = -0.0005;
 scene.add(key);
 const fill = new THREE.DirectionalLight(0xDCE7F5, .45);
 fill.position.set(-10, 8, -6);
 scene.add(fill);
 
+/* ---------------- manchas de sombra ----------------
+   Substituem o mapa de sombras. Um degradê radial num plano dá a
+   mesma mancha suave que o PCFSoft dava, sem desenhar a cena outra
+   vez. A textura é uma só, de 64×64, partilhada por todas.
+
+   `depthWrite:false` porque são transparentes e se sobrepõem; sem
+   isso a mancha do robô recortava um buraco na do sofá. */
+const SOMBRA_TEX = (() => {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const c = cv.getContext('2d');
+  const g = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0,   'rgba(30,41,59,.60)');
+  g.addColorStop(.55, 'rgba(30,41,59,.34)');
+  g.addColorStop(1,   'rgba(30,41,59,0)');
+  c.fillStyle = g; c.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(cv);
+  t.generateMipmaps = false;
+  t.minFilter = t.magFilter = THREE.LinearFilter;
+  return t;
+})();
+const SOMBRA_GEO = new THREE.PlaneGeometry(1, 1);
+SOMBRA_GEO.rotateX(-Math.PI / 2);
+
+/** Mancha de sombra no chão. `op` afina o quanto ela carrega. */
+function sombra(largura, fundura = largura, op = 1){
+  const m = new THREE.Mesh(SOMBRA_GEO, new THREE.MeshBasicMaterial({
+    map: SOMBRA_TEX, transparent: true, opacity: op,
+    depthWrite: false, fog: false,
+  }));
+  m.scale.set(largura, 1, fundura);
+  m.position.y = .022;
+  m.renderOrder = -2;      // por baixo dos contornos, que estão em -1
+  return m;
+}
+
 /* chão claro com tapete central */
 const floor = new THREE.Mesh(
-  new THREE.CircleGeometry(24, 64),
-  new THREE.MeshStandardMaterial({ color:0xF9FBFD, roughness:.92 })
+  new THREE.CircleGeometry(24, 48),
+  new THREE.MeshLambertMaterial({ color:0xF9FBFD })
 );
 floor.rotation.x = -Math.PI/2;
-floor.receiveShadow = true;
 scene.add(floor);
 
 const rug = new THREE.Mesh(
-  new THREE.CircleGeometry(5.2, 64),
-  new THREE.MeshStandardMaterial({ color:0xE7EDF6, roughness:1 })
+  new THREE.CircleGeometry(5.2, 32),
+  new THREE.MeshLambertMaterial({ color:0xE7EDF6 })
 );
-rug.rotation.x = -Math.PI/2; rug.position.y = .01; rug.receiveShadow = true;
+rug.rotation.x = -Math.PI/2; rug.position.y = .01;
 scene.add(rug);
 
 const grid = new THREE.GridHelper(48, 48, 0xD9E2EE, 0xE8EEF6);
 grid.position.y = .02;
 grid.material.transparent = true; grid.material.opacity = .5;
 scene.add(grid);
-
-/* ---------------- etiqueta flutuante ---------------- */
-function makeLabel(text, hex){
-  const dpr = 2, fs = 34, padX = 26, padY = 16, dotR = 7;
-  const cv = document.createElement('canvas');
-  let c = cv.getContext('2d');
-  c.font = `600 ${fs}px Inter, sans-serif`;
-  const tw = c.measureText(text).width;
-
-  cv.width  = (tw + padX*2 + dotR*2 + 14) * dpr;
-  cv.height = (fs + padY*2) * dpr;
-
-  c = cv.getContext('2d');
-  c.scale(dpr, dpr);
-  const w = cv.width/dpr, h = cv.height/dpr;
-
-  c.shadowColor = 'rgba(27,34,48,.18)'; c.shadowBlur = 14; c.shadowOffsetY = 4;
-  c.fillStyle = '#fff';
-  c.beginPath(); c.roundRect(0, 0, w, h, h/2); c.fill();
-  c.shadowColor = 'transparent';
-
-  c.fillStyle = hex;
-  c.beginPath(); c.arc(padX - 4, h/2, dotR, 0, Math.PI*2); c.fill();
-
-  c.fillStyle = '#1B2230';
-  c.font = `600 ${fs}px Inter, sans-serif`;
-  c.textBaseline = 'middle';
-  c.fillText(text, padX + dotR + 10, h/2 + 1);
-
-  const tex = new THREE.CanvasTexture(cv);
-  tex.minFilter = THREE.LinearFilter;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
-  sp.scale.set((w/h) * .74, .74, 1);
-  sp.renderOrder = 999;
-  return sp;
-}
 
 /* ---------------- posto de trabalho ---------------- */
 /* ─────────────────────────────────────────────────────────────
@@ -514,6 +538,68 @@ function outline(mesh, k = 1.045) {
   return o;
 }
 
+/* ---------------- fusão de peças ----------------
+   Cada malha é uma chamada de desenho, e havia 520 delas. Estas duas
+   funções juntam peças ESTÁTICAS que partilham material numa geometria
+   só: 33 teclas passam a uma malha, as cinco folhas da planta a outra,
+   e todos os contornos de um posto a uma terceira.
+
+   Só serve para o que não se mexe por sua conta. O que roda ou se
+   anima — cabeça, braços, cadeira, vapor — fica solto. */
+
+/** Achata a matriz de um mesh na sua geometria e devolve-a solta. */
+function assar(mesh){
+  mesh.updateMatrix();
+  return mesh.geometry.clone().applyMatrix4(mesh.matrix);
+}
+
+/**
+ * Junta geometrias uniformizando a indexação.
+ *
+ * O `mergeGeometries` recusa-se a misturar geometrias indexadas com
+ * não indexadas, e esta cena mistura-as sempre: o `roundedBox()` sai do
+ * ExtrudeGeometry, que vem SEM índice, e as esferas e cilindros das
+ * primitivas vêm COM ele. Sem esta normalização o merge devolvia null
+ * e a peça desaparecia da cena sem erro nenhum.
+ */
+function juntarGeos(gs){
+  const mistura = gs.some(g => g.index === null);
+  const usadas = mistura ? gs.map(g => (g.index === null ? g : g.toNonIndexed())) : gs;
+  const m = mergeGeometries(usadas);
+  usadas.forEach((g, i) => { if (g !== gs[i]) g.dispose(); });
+  gs.forEach(g => g.dispose());
+  return m;
+}
+
+/**
+ * Funde uma lista de meshes numa malha só, com o material do primeiro.
+ * Devolve `null` para uma lista vazia, para poder ser usado à solta.
+ */
+function fundir(meshes, material){
+  if (!meshes.length) return null;
+  return new THREE.Mesh(juntarGeos(meshes.map(assar)), material || meshes[0].material);
+}
+
+/**
+ * Contornos de um grupo de peças, numa malha só.
+ *
+ * O contorno é a mesma geometria à escala `k` com as faces de trás —
+ * ao fundi-los, a escala tem de ser achatada na geometria de cada um
+ * ANTES da junção, senão perdia-se e os contornos colapsavam para
+ * dentro das peças. O `renderOrder` fica no −1 de sempre.
+ */
+function contornos(pares){
+  const o = new THREE.Mesh(juntarGeos(pares.map(([mesh, k = 1.045]) => {
+    const c = new THREE.Mesh(mesh.geometry, INK);
+    c.position.copy(mesh.position);
+    c.rotation.copy(mesh.rotation);
+    c.scale.copy(mesh.scale).multiplyScalar(k);
+    return assar(c);
+  })), INK);
+  o.renderOrder = -1;
+  return o;
+}
+
 /**
  * Caixa de cantos arredondados.
  *
@@ -523,7 +609,15 @@ function outline(mesh, k = 1.045) {
  * para extrudir e rodamos no fim — assim o raio é sempre comparado com
  * as duas dimensões grandes.
  */
-function roundedBox(w, h, d, r = .06, seg = 2) {
+const CACHE_CAIXA = new Map();
+function roundedBox(w, h, d, r = .06, seg = 1) {
+  /* Memoizado: os cinco postos pedem as MESMAS doze caixas, e o
+     ExtrudeGeometry é dos construtores mais caros do three. Sessenta
+     chamadas no arranque passam a doze. Pode partilhar-se sem receio —
+     quem funde peças clona a geometria antes de lhe tocar. */
+  const chave = `${w},${h},${d},${r},${seg}`;
+  if (CACHE_CAIXA.has(chave)) return CACHE_CAIXA.get(chave);
+
   const dims = [w, h, d];
   const eixo = dims.indexOf(Math.min(...dims));
   const [a, b] = eixo === 0 ? [d, h] : eixo === 1 ? [w, d] : [w, h];
@@ -548,6 +642,7 @@ function roundedBox(w, h, d, r = .06, seg = 2) {
   if (eixo === 0) g.rotateY(Math.PI / 2);
   else if (eixo === 1) g.rotateX(-Math.PI / 2);
   g.center();
+  CACHE_CAIXA.set(chave, g);
   return g;
 }
 
@@ -579,408 +674,9 @@ const SCREEN_TEX = (() => {
   return t;
 })();
 
+const NOTE_CORES = [0xFDE68A, 0xFBCFE8, 0xBBF7D0, 0xBFDBFE];
 
 const R = 7.4;   // raio do arco de secretárias
-
-/* ─────────────────────────────────────────────────────────────
-   O robô, em GLB.
-
-   O modelo do Meshy vem como UMA malha sem rig: não traz ossos,
-   nem cabeça nem braços separados. Mas esta cena precisa de rodar
-   cabeça e braços por sua conta, por isso partimos a malha por
-   posição do triângulo. A anatomia dá dois planos limpos: um
-   estreitamento no pescoço e um vazio entre tronco e braços —
-   confirmados no histograma de vértices do modelo, não adivinhados.
-
-   Os limiares estão em espaço do modelo (bbox de -0.95 a 0.94 em Y).
-   Trocar o modelo é trocar estes dois números.
-
-   Cada peça é recentrada no seu próprio pivô. Sem isso, o contorno
-   por casca invertida escalava a partir do chão em vez do centro da
-   peça e ficava desalinhado.
-   ───────────────────────────────────────────────────────────── */
-const Y_PESCOCO = 0.19;   // acima disto é cabeça — as orelhas vêm com ela
-const X_OMBRO   = 0.42;   // para fora disto é braço
-const ALTURA    = 1.30;   // altura final do robô, em unidades do mundo
-const FLUTUA    = 0.55;   // a que altura paira: não tem pernas
-/* Casca na cor do agente, viva.
-
-   Antes era uma mistura do creme com o acento a 50%, e dava pastéis
-   lavados: o creme é dessaturado e arrastava a saturação para baixo.
-   Agora mexe-se em HSL — guarda-se o tom do agente, empurra-se a
-   saturação e traz-se a claridade de todos para a mesma banda.
-
-   A claridade é limitada a uma banda, não fixada num valor. As cores da
-   paleta vêm com luminosidades muito diferentes (o verde a 39%, o violeta
-   a 66%) e a cheio o verde lia-se como um robô na sombra ao lado dos
-   outros. Mas achatá-las todas ao mesmo valor descaracterizava-as: o
-   esmeralda do Designer saía menta e deixava de combinar com o ponto da
-   cor dele no painel. A banda corta só os extremos. */
-const SATURA    = 1.15;   // multiplicador da saturação, travado em 1
-const CLARO_MIN = 0.46;   // abaixo disto a casca lê-se como sombra
-const CLARO_MAX = 0.60;   // acima disto perde corpo e parece lavada
-
-/* A textura do modelo tem só duas cores úteis, medidas no histograma de
-   luminância dos seus 4,2 milhões de píxeis: um pico em 240 (a casca) e
-   outro em 28 (a viseira), com 0,45% de píxeis no vale entre eles.
-
-   Esse vale são riscos e manchas que o prompt de texturização não
-   conseguiu evitar, e viam-se na cara e no pescoço. Em vez de os limpar
-   píxel a píxel — o que virava creme os riscos DENTRO da viseira e
-   ficava pior — classificamos cada TRIÂNGULO pela mediana de sete
-   amostras e pintamo-lo de uma das duas cores lisas. Os artefactos
-   desaparecem dos dois lados, ficam as cores mate e lisas pedidas, e a
-   textura de 2 MB deixa de ser precisa em execução. */
-const CREME   = 0xF2E8CF;   // rgb(242,232,207), medido na textura
-const VISEIRA = 0x041D49;   // rgb(4,29,73), medido na textura
-
-/** Cor da casca: o tom do agente, saturado e com a claridade na banda. */
-function corCasca(hex){
-  const c = new THREE.Color(hex);
-  const h = c.getHSL({ h:0, s:0, l:0 });
-  return c.setHSL(
-    h.h,
-    Math.min(1, h.s * SATURA),
-    Math.min(CLARO_MAX, Math.max(CLARO_MIN, h.l)),
-  );
-}
-/* Não é o meio do vale (134). O ponto médio entre os dois picos parece o
-   limite óbvio, mas classificava como viseira os triângulos onde um risco
-   escuro tapava o meio do triângulo, e o pescoço ficava salpicado de
-   manchas azuis. O cluster da viseira acaba nos 55, por isso o limite vai
-   logo acima dele: assim um risco a meia-luz cai do lado da casca. */
-const LIMIAR  = 64;
-
-/* Os módulos do escritório trazem uma TERCEIRA cor: as calhas de luz, em
-   ciano. Com a regra de duas do robô caíam do lado do creme (têm
-   luminância ~140) e desapareciam — e são elas que carregam a cor do
-   agente. Medido na textura do gabinete: friso #151e2e com 16.5% da área,
-   calha #25bbd2 com 1.0%, casca #f3efe1 com 82.5%.
-
-   O robô passa por aqui sem mudar de aspeto: o azul-marinho dele tem
-   saturação 0.94, mas luminância 29, e o teste do escuro vem primeiro. */
-const SAT_CALHA = 0.45;
-
-/* Sete pontos baricêntricos: centróide, meios das arestas e junto aos
-   vértices. Serve os dois critérios de baixo. */
-const AMOSTRAS = [
-  [1/3, 1/3, 1/3], [.5, .5, 0], [0, .5, .5], [.5, 0, .5],
-  [.6, .2, .2], [.2, .6, .2], [.2, .2, .6],
-];
-
-/** Lê a textura para um amostrador de luminância e saturação por UV. */
-function amostrador(img){
-  const cv = document.createElement('canvas');
-  cv.width = img.width; cv.height = img.height;
-  const cx = cv.getContext('2d', { willReadFrequently: true });
-  cx.drawImage(img, 0, 0);
-  const px = cx.getImageData(0, 0, cv.width, cv.height).data;
-  // As UV do glTF têm o V a crescer para baixo e o loader marca
-  // flipY=false, por isso a linha do canvas é v*(altura-1), sem inverter.
-  return (u, v) => {
-    const x = Math.min(cv.width  - 1, Math.max(0, Math.round(u * (cv.width  - 1))));
-    const y = Math.min(cv.height - 1, Math.max(0, Math.round(v * (cv.height - 1))));
-    const i = (y * cv.width + x) * 4;
-    const r = px[i], g = px[i+1], b = px[i+2];
-    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-    return { l: r * .299 + g * .587 + b * .114, s: mx ? (mx - mn) / mx : 0 };
-  };
-}
-
-/**
- * Classe de cor de um triângulo: 'escuro', 'calha' ou 'casca'.
- *
- * Mediana para a luminância, MÁXIMO para a saturação, e não é incoerência.
- * O friso escuro é área grande e a mediana acerta-lhe. As calhas são linhas
- * finas: medi-as e com a mediana só 161 dos 6808 triângulos do gabinete
- * saíam como calha, contra 425 com o máximo. À distância desta câmara uma
- * calha de um triângulo de largura fica sub-pixel, por isso vale enviesar
- * a favor de a mostrar.
- */
-function classeCor(luz, uv, t){
-  if (!luz || !uv) return 'casca';
-  const p = AMOSTRAS.map(([a, b, c]) => luz(
-    a * uv.getX(t) + b * uv.getX(t+1) + c * uv.getX(t+2),
-    a * uv.getY(t) + b * uv.getY(t+1) + c * uv.getY(t+2),
-  ));
-  const lum = p.map(o => o.l).sort((x, y) => x - y);
-  if (lum[3] < LIMIAR) return 'escuro';
-  if (Math.max(...p.map(o => o.s)) > SAT_CALHA) return 'calha';
-  return 'casca';
-}
-
-/** Extrai um subconjunto de triângulos de `geo` para uma geometria nova. */
-function recortarTris(geo, tris, aplicar){
-  const g = new THREE.BufferGeometry();
-  for (const attr of ['position', 'normal']) {
-    const src = geo.attributes[attr];
-    if (!src) continue;
-    const it = src.itemSize;
-    const dst = new Float32Array(tris.length * 3 * it);
-    tris.forEach((t, i) => {
-      for (let v = 0; v < 3; v++)
-        for (let k = 0; k < it; k++)
-          dst[(i*3 + v)*it + k] = src.array[(t + v)*it + k];
-    });
-    g.setAttribute(attr, new THREE.BufferAttribute(dst, it));
-  }
-  if (aplicar) aplicar(g);
-  g.computeBoundingBox();
-  g.computeBoundingSphere();
-  return g;
-}
-
-/** Primeira malha de um GLB, já sem índices, com a textura amostrada. */
-async function carregarMalha(url){
-  const gltf = await new GLTFLoader().loadAsync(url);
-  let fonte = null;
-  gltf.scene.traverse(o => { if (o.isMesh && !fonte) fonte = o; });
-  if (!fonte) throw new Error(url + ' não traz malha');
-  const geo = fonte.geometry.toNonIndexed();
-  geo.computeBoundingBox();
-  const img = fonte.material.map?.image;
-  return { geo, luz: img ? amostrador(img) : null };
-}
-
-/* ─────────────────────────────────────────────────────────────
-   O gabinete: cápsula em U onde cada agente trabalha.
-
-   A altura é escolhida para a bancada do módulo aterrar nos 0.78 da
-   secretária que aqui estava antes — medi que a bancada está a 40% da
-   altura do modelo, logo 0.78/0.40 = 1.95. Assim nenhum dos objetos que
-   continuam procedurais (teclado, caneca, planta, papéis, candeeiro)
-   precisou de se mexer um milímetro.
-
-   A profundidade leva um esticão à parte: à escala uniforme a cápsula
-   ficava rasa demais e o robô pairava fora da boca dela em vez de dentro
-   do seu gabinete.
-   ───────────────────────────────────────────────────────────── */
-const GAB_BANCADA = 0.78;   // altura da bancada, herdada da secretária antiga
-const GAB_FRACAO  = 0.40;   // a que fração da altura do modelo ela está
-const GAB_FUNDO   = 1.40;   // esticão só na profundidade
-
-let GABINETE = null;
-
-async function carregarGabinete(){
-  const { geo, luz } = await carregarMalha('/modelos/gabinete.glb');
-  const uv = geo.attributes.uv;
-  const bb = geo.boundingBox;
-
-  const S = (GAB_BANCADA / GAB_FRACAO) / (bb.max.y - bb.min.y);
-  const transformar = g => {
-    g.scale(S, S, S * GAB_FUNDO);
-    g.translate(0, -bb.min.y * S, 0);      // assenta o plinto no chão
-  };
-
-  const balde = { escuro: [], calha: [], casca: [] };
-  for (let t = 0; t < geo.attributes.position.count; t += 3)
-    balde[classeCor(luz, uv, t)].push(t);
-
-  const pecas = {};
-  for (const [k, tris] of Object.entries(balde))
-    pecas[k] = tris.length ? recortarTris(geo, tris, transformar) : null;
-
-  /* Onde pousar o ecrã procedural: o painel do ecrã é a maior mancha de
-     triângulos escuros virada para a abertura, e é dela que saem o centro
-     e a largura. Medir em vez de adivinhar foi o que evitou, no robô, ter
-     os olhos enterrados dentro da cabeça. */
-  let ecra = null;
-  if (pecas.escuro) {
-    const p = pecas.escuro.attributes.position, n = pecas.escuro.attributes.normal;
-    let sx = 0, sy = 0, sz = 0, c = 0;
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let i = 0; i < p.count; i++) {
-      // só o que olha para a frente e está acima da bancada
-      if (n.getZ(i) < .6 || p.getY(i) < GAB_BANCADA) continue;
-      sx += p.getX(i); sy += p.getY(i); sz += p.getZ(i); c++;
-      x0 = Math.min(x0, p.getX(i)); x1 = Math.max(x1, p.getX(i));
-      y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i));
-    }
-    if (c > 12) ecra = {
-      x: sx / c, y: sy / c, z: sz / c + .012,
-      largura: (x1 - x0) * .92, altura: (y1 - y0) * .92,
-    };
-  }
-
-  const alto = (bb.max.y - bb.min.y) * S;
-  GABINETE = {
-    pecas, ecra, alto,
-    largura: (bb.max.x - bb.min.x) * S,
-    fundo:   (bb.max.z - bb.min.z) * S * GAB_FUNDO,
-  };
-  return GABINETE;
-}
-
-let PECAS = null;
-
-async function carregarRobo(){
-  const gltf = await new GLTFLoader().loadAsync('/modelos/robo.glb');
-
-  let fonte = null;
-  gltf.scene.traverse(o => { if (o.isMesh && !fonte) fonte = o; });
-  if (!fonte) throw new Error('robo.glb não traz malha');
-
-  const geo = fonte.geometry.toNonIndexed();
-  const pos = geo.attributes.position;
-  const uv  = geo.attributes.uv;
-
-  // O GLB tem origem ao centro; esta cena quer y=0 no chão e o robô a pairar.
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox;
-  const S = ALTURA / (bb.max.y - bb.min.y);
-  const LIFT = FLUTUA - bb.min.y * S;
-
-  /* Lê a textura uma vez para poder classificar os triângulos. As UV do
-     glTF têm o V a crescer para baixo e o loader marca flipY=false, por
-     isso a linha do canvas é v*(altura-1), sem inverter. */
-  let luz = null;
-  const img = fonte.material.map?.image;
-  if (img && uv) {
-    const cv = document.createElement('canvas');
-    cv.width = img.width; cv.height = img.height;
-    const cx = cv.getContext('2d', { willReadFrequently: true });
-    cx.drawImage(img, 0, 0);
-    const px = cx.getImageData(0, 0, cv.width, cv.height).data;
-    luz = (u, v) => {
-      const x = Math.min(cv.width  - 1, Math.max(0, Math.round(u * (cv.width  - 1))));
-      const y = Math.min(cv.height - 1, Math.max(0, Math.round(v * (cv.height - 1))));
-      const i = (y * cv.width + x) * 4;
-      return px[i] * .299 + px[i+1] * .587 + px[i+2] * .114;
-    };
-  }
-
-  // Sete pontos baricêntricos: centróide, meios das arestas e junto aos
-  // vértices. A mediana de sete ignora um risco fino que atravesse o meio.
-  const AMOSTRAS = [
-    [1/3, 1/3, 1/3], [.5, .5, 0], [0, .5, .5], [.5, 0, .5],
-    [.6, .2, .2], [.2, .6, .2], [.2, .2, .6],
-  ];
-  function ehViseira(t){
-    if (!luz) return false;
-    const vals = AMOSTRAS.map(([a, b, c]) => luz(
-      a * uv.getX(t) + b * uv.getX(t+1) + c * uv.getX(t+2),
-      a * uv.getY(t) + b * uv.getY(t+1) + c * uv.getY(t+2),
-    )).sort((p, q) => p - q);
-    return vals[3] < LIMIAR;      // mediana de sete
-  }
-
-  // reparte os triângulos: anatomia pelo centróide, cor pela textura
-  const balde = {};
-  for (const p of ['cabeca', 'corpo', 'bracoL', 'bracoR'])
-    balde[p] = { casca: [], viseira: [] };
-
-  for (let t = 0; t < pos.count; t += 3) {
-    const cx = (pos.getX(t) + pos.getX(t+1) + pos.getX(t+2)) / 3;
-    const cy = (pos.getY(t) + pos.getY(t+1) + pos.getY(t+2)) / 3;
-    const parte = cy >  Y_PESCOCO ? 'cabeca'
-                : cx < -X_OMBRO   ? 'bracoL'
-                : cx >  X_OMBRO   ? 'bracoR'
-                : 'corpo';
-    balde[parte][ehViseira(t) ? 'viseira' : 'casca'].push(t);
-  }
-
-  /** Extrai um subconjunto de triângulos para uma geometria nova. */
-  function recortar(tris){
-    const g = new THREE.BufferGeometry();
-    for (const attr of ['position', 'normal']) {
-      const src = geo.attributes[attr];
-      if (!src) continue;
-      const it = src.itemSize;
-      const dst = new Float32Array(tris.length * 3 * it);
-      tris.forEach((t, i) => {
-        for (let v = 0; v < 3; v++)
-          for (let k = 0; k < it; k++)
-            dst[(i*3 + v)*it + k] = src.array[(t + v)*it + k];
-      });
-      g.setAttribute(attr, new THREE.BufferAttribute(dst, it));
-    }
-    g.scale(S, S, S);
-    g.translate(0, LIFT, 0);
-    g.computeBoundingBox();
-    return g;
-  }
-
-  const cru = {};
-  for (const [nome, sub] of Object.entries(balde)) {
-    // A peça inteira serve o contorno; as sub-peças levam as duas cores.
-    cru[nome] = recortar(sub.casca.concat(sub.viseira));
-    cru[nome].userData.sub = {
-      casca:   sub.casca.length   ? recortar(sub.casca)   : null,
-      viseira: sub.viseira.length ? recortar(sub.viseira) : null,
-    };
-  }
-
-  // Pivôs: pescoço para a cabeça, ombro para os braços (medidos no modelo),
-  // e o próprio centro para o tronco, que não roda mas precisa do contorno.
-  const pivos = {
-    cabeca: new THREE.Vector3(0, Y_PESCOCO * S + LIFT, 0),
-    bracoL: new THREE.Vector3(-0.443 * S, -0.064 * S + LIFT, 0),
-    bracoR: new THREE.Vector3( 0.443 * S, -0.064 * S + LIFT, 0),
-    corpo:  cru.corpo.boundingBox.getCenter(new THREE.Vector3()),
-  };
-
-  const pecas = {};
-  for (const [nome, g] of Object.entries(cru)) {
-    const p = pivos[nome];
-    // a peça inteira e as duas sub-peças de cor vão todas para o mesmo pivô,
-    // senão a viseira desencontrava-se da cabeça ao rodá-la
-    for (const alvo of [g, g.userData.sub.casca, g.userData.sub.viseira]) {
-      if (!alvo) continue;
-      alvo.translate(-p.x, -p.y, -p.z);
-      alvo.computeBoundingBox();
-      alvo.computeBoundingSphere();
-    }
-    pecas[nome] = g;
-  }
-
-  /* Onde assentam olhos e acentos, já em espaço local da cabeça.
-
-     Uma fração da caixa envolvente não serve: o máximo da caixa está no
-     ponto mais saliente da cabeça toda, que não é onde queremos pousar a
-     peça. Peças a 92% da caixa ficaram enterradas dentro da malha e
-     invisíveis. Por isso medimos a superfície REAL na vizinhança de cada
-     sítio, e pousamos com uma folga mínima por fora. */
-  const cb = pecas.cabeca.boundingBox;
-  const hp = pecas.cabeca.attributes.position;
-
-  // altura das orelhas: média em Y dos vértices mais afastados no X
-  let somaY = 0, n = 0;
-  const largo = cb.max.x * .86;
-  for (let i = 0; i < hp.count; i++) {
-    if (Math.abs(hp.getX(i)) > largo) { somaY += hp.getY(i); n++; }
-  }
-  const yOrelha = n ? somaY / n : cb.min.y + (cb.max.y - cb.min.y) * .4;
-  const yVisor  = cb.min.y + (cb.max.y - cb.min.y) * .52;
-
-  /** Superfície da cabeça: extremo no eixo `eixo` entre os vértices próximos. */
-  function superficie(eixo, perto){
-    let m = -Infinity;
-    for (let i = 0; i < hp.count; i++) {
-      if (perto(hp.getX(i), hp.getY(i), hp.getZ(i))) {
-        const v = eixo === 'x' ? Math.abs(hp.getX(i)) : hp.getZ(i);
-        if (v > m) m = v;
-      }
-    }
-    return m;
-  }
-
-  const FOLGA = .012;   // o quanto a peça de cor sobressai da casca
-  const visor = {
-    y: yVisor,
-    // frente da viseira, medida na faixa central à altura dos olhos
-    z: superficie('z', (x, y) => Math.abs(x) < cb.max.x * .3
-                                && Math.abs(y - yVisor) < .05) + FOLGA,
-  };
-  const orelha = {
-    // ponta da orelha, medida na faixa à altura delas
-    x: superficie('x', (x, y) => Math.abs(y - yOrelha) < .05) - .01,
-    y: yOrelha,
-    z: 0,
-  };
-
-  PECAS = { pecas, pivos, visor, orelha, topo: bb.max.y * S + LIFT };
-  return PECAS;
-}
 
 function buildDesk(agent, angle) {
   const g = new THREE.Group();
@@ -988,233 +684,281 @@ function buildDesk(agent, angle) {
   const acc = toon(accent);
   const anim = { steam: [], folhas: [], olhos: [], bracos: [] };
 
-  /* ── o gabinete ─────────────────────────────────────────────
-     Cápsula do Meshy, em vez das divisórias e da secretária que aqui
-     estavam. Traz a bancada e o painel do ecrã na própria malha, e é
-     nas calhas de luz que a cor do agente se destaca: a casca fica
-     creme de propósito, senão a calha perdia-se contra ela.
+  /* As peças estáticas são construídas na mesma, nas mesmas medidas e
+     nos mesmos sítios, mas em vez de irem uma a uma para a cena vão
+     para estes baldes e saem fundidas por material no fim. `nada` é um
+     material de rascunho: quem fica na cena é o do balde. */
+  const nada = INK;
+  const bCasca = [], bAcento = [], bBranco = [], bCinza = [], bClaro = [],
+        bTeclas = [], bFolhas = [], bContorno = [];
 
-     A abertura do U olha para o centro da sala. O grupo do posto já vem
-     rodado de `angle + π`, por isso o módulo entra sem rotação própria. */
-  const { pecas: gp, ecra } = GABINETE;
+  /* ── divisórias do cubículo ─────────────────────────────── */
+  const paredeMat = toon(0xE8EDF5);
+  const parede = new THREE.Mesh(roundedBox(3.4, 1.85, .12, .08), nada);
+  parede.position.set(0, .92, -1.05);
+  bCasca.push(parede); bContorno.push([parede, 1.018]);
 
-  const cascaGab = toon(CREME, { side: THREE.DoubleSide });
-  const frisoGab = toon(VISEIRA, { side: THREE.DoubleSide });
-  // Basic e não Toon: uma calha de luz não deve receber sombreado, senão
-  // apaga-se do lado que fica virado para longe da luz principal.
-  const calhaGab = new THREE.MeshBasicMaterial({ color: accent });
+  const rimo = new THREE.Mesh(roundedBox(3.44, .1, .16, .05), nada);
+  rimo.position.set(0, 1.86, -1.05); bAcento.push(rimo);
 
-  [[gp.casca, cascaGab], [gp.escuro, frisoGab], [gp.calha, calhaGab]]
-    .forEach(([geo, mat]) => {
-      if (!geo) return;
-      const m = new THREE.Mesh(geo, mat);
-      m.castShadow = m.receiveShadow = true;
-      g.add(m);
-    });
-  anim.calha = calhaGab;
+  const lateral = new THREE.Mesh(roundedBox(2.1, 1.5, .12, .08), nada);
+  lateral.position.set(1.7, .75, -.1); lateral.rotation.y = Math.PI / 2;
+  bCasca.push(lateral); bContorno.push([lateral, 1.026]);
 
-  /* ── ecrã ───────────────────────────────────────────────────
-     Fica procedural porque o código controla-o: tem a textura de "código"
-     a correr e o emissivo muda com o estado do agente. Assenta no painel
-     que o carregador mediu na malha, em vez de numa posição adivinhada. */
+  /* post-its: o toque humano que faz a diferença entre "render" e
+     "sítio". São três cores diferentes, por isso a fusão passa-lhes a
+     cor num atributo `color` e o material lê-a com `vertexColors` —
+     é o que permite juntar cores diferentes numa malha só. */
+  const notas = [];
+  for (let i = 0; i < 3; i++) {
+    const geo = new THREE.PlaneGeometry(.26, .26);
+    const cor = new THREE.Color(NOTE_CORES[i % NOTE_CORES.length]);
+    const cores = new Float32Array(geo.attributes.position.count * 3);
+    for (let v = 0; v < geo.attributes.position.count; v++) cor.toArray(cores, v * 3);
+    geo.setAttribute('color', new THREE.BufferAttribute(cores, 3));
+    const n = new THREE.Mesh(geo, nada);
+    n.position.set(-1.05 + i * .42, 1.32 + (i % 2) * .3, -.985);
+    n.rotation.z = (Math.random() - .5) * .28;
+    notas.push(n);
+  }
+  g.add(fundir(notas, new THREE.MeshBasicMaterial({ vertexColors: true })));
+
+  /* ── secretária ─────────────────────────────────────────── */
+  const top = new THREE.Mesh(roundedBox(2.7, .12, 1.35, .07), nada);
+  top.position.y = .78;
+  bBranco.push(top); bContorno.push([top, 1.023]);
+
+  const trim = new THREE.Mesh(roundedBox(2.74, .05, 1.39, .03), nada);
+  trim.position.y = .715; bAcento.push(trim);
+
+  [-1.15, 1.15].forEach(x => {
+    const p = new THREE.Mesh(roundedBox(.1, .72, 1.15, .04), nada);
+    p.position.set(x, .36, 0); bCinza.push(p);
+  });
+
+  /* ── monitor ────────────────────────────────────────────── */
+  const bez = new THREE.Mesh(roundedBox(1.3, .84, .07, .06), toon(0x3C4657));
+  bez.position.set(0, 1.36, -.42);
+  g.add(bez); bContorno.push([bez, 1.045]);
+
   const screenTex = SCREEN_TEX.clone();
   screenTex.needsUpdate = true;
   screenTex.repeat.set(1, .55);
   const screen = new THREE.Mesh(
-    new THREE.PlaneGeometry(ecra ? ecra.largura : 1.14, ecra ? ecra.altura : .68),
+    new THREE.PlaneGeometry(1.14, .68),
     new THREE.MeshStandardMaterial({
       map: screenTex, emissive: accent, emissiveIntensity: .12,
       emissiveMap: screenTex, roughness: .4,
     })
   );
-  if (ecra) screen.position.set(ecra.x, ecra.y, ecra.z);
-  else screen.position.set(0, 1.36, -.38);
-  g.add(screen);
+  screen.position.set(0, 1.36, -.38); g.add(screen);
   anim.screenTex = screenTex;
 
+  const pe = new THREE.Mesh(roundedBox(.12, .3, .1, .04), nada);
+  pe.position.set(0, .99, -.42); bCinza.push(pe);
+  const base = new THREE.Mesh(roundedBox(.5, .05, .3, .03), nada);
+  base.position.set(0, .855, -.42); bCinza.push(base);
+
   /* ── teclado, rato, caneca ──────────────────────────────── */
-  const tec = new THREE.Mesh(roundedBox(1.05, .05, .38, .03), toon(0xF1F5F9));
+  const tec = new THREE.Mesh(roundedBox(1.05, .05, .38, .03), nada);
   tec.position.set(-.08, .865, .18); tec.rotation.x = -.05;
-  tec.castShadow = true; g.add(tec);
+  bClaro.push(tec);
+  // 33 teclas, uma malha. Eram 33 chamadas de desenho por secretária.
   for (let r = 0; r < 3; r++) for (let c = 0; c < 11; c++) {
-    const k = new THREE.Mesh(new THREE.BoxGeometry(.06, .012, .06), toon(0xCBD5E5));
+    const k = new THREE.Mesh(new THREE.BoxGeometry(.06, .012, .06), nada);
     k.position.set(-.53 + c * .088, .895, .06 + r * .1);
-    g.add(k);
+    bTeclas.push(k);
   }
 
-  const rato = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 10), toon(0xF1F5F9));
-  rato.scale.set(1, .6, 1.35); rato.position.set(.55, .875, .16); g.add(rato);
+  const rato = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 10), nada);
+  rato.scale.set(1, .6, 1.35); rato.position.set(.72, .875, .2); bClaro.push(rato);
 
-  const caneca = new THREE.Mesh(new THREE.CylinderGeometry(.1, .085, .19, 16), acc);
-  caneca.position.set(-.80, .93, .22); caneca.castShadow = true;
-  g.add(caneca, outline(caneca, 1.07));
-  const asa = new THREE.Mesh(new THREE.TorusGeometry(.06, .018, 8, 14), acc);
-  asa.position.set(-.68, .93, .22); asa.rotation.y = Math.PI / 2; g.add(asa);
+  const caneca = new THREE.Mesh(new THREE.CylinderGeometry(.1, .085, .19, 16), nada);
+  caneca.position.set(-1.02, .93, .3);
+  bAcento.push(caneca); bContorno.push([caneca, 1.07]);
+  const asa = new THREE.Mesh(new THREE.TorusGeometry(.06, .018, 8, 14), nada);
+  asa.position.set(-.9, .93, .3); asa.rotation.y = Math.PI / 2; bAcento.push(asa);
 
-  // vapor: três esferinhas que sobem e desvanecem em ciclo
+  // vapor: três esferinhas que sobem e desvanecem em ciclo. Ficam
+  // soltas — cada uma anda ao seu ritmo, e fundidas perdiam-no.
   for (let i = 0; i < 3; i++) {
     const s = new THREE.Mesh(
       new THREE.SphereGeometry(.045, 10, 8),
       new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: .5 })
     );
-    s.position.set(-.80, 1.05, .22);
+    s.position.set(-1.02, 1.05, .3);
     s.userData.fase = i / 3;
     anim.steam.push(s); g.add(s);
   }
 
   /* ── planta ─────────────────────────────────────────────── */
   const vaso = new THREE.Mesh(new THREE.CylinderGeometry(.16, .12, .24, 14), toon(0xE8A87C));
-  vaso.position.set(.88, .92, .30); vaso.castShadow = true;
-  g.add(vaso, outline(vaso, 1.06));
+  vaso.position.set(1.15, .92, .42);
+  g.add(vaso); bContorno.push([vaso, 1.06]);
+  /* As cinco folhas ficam numa malha só e baloiça a planta inteira, em
+     vez de cada folha por si. Para o baloiço rodar no sítio certo, elas
+     nascem à volta da ORIGEM e é a malha que vai para cima do vaso —
+     fundidas nas coordenadas antigas, rodavam à volta do centro do
+     posto e a planta varria a secretária. */
   for (let i = 0; i < 5; i++) {
-    const f = new THREE.Mesh(new THREE.SphereGeometry(.13, 10, 8), toon(0x6EC17A));
+    const f = new THREE.Mesh(new THREE.SphereGeometry(.13, 10, 8), nada);
     f.scale.set(.42, 1.5, .95);
     const a = (i / 5) * Math.PI * 2;
-    f.position.set(.88 + Math.cos(a) * .1, 1.16 + (i % 2) * .07, .30 + Math.sin(a) * .1);
+    f.position.set(Math.cos(a) * .1, .11 + (i % 2) * .07, Math.sin(a) * .1);
     f.rotation.z = Math.cos(a) * .45; f.rotation.x = Math.sin(a) * .45;
-    f.userData.base = f.rotation.z; f.userData.fase = i;
-    anim.folhas.push(f); g.add(f);
+    bFolhas.push(f);
   }
+  const folhas = fundir(bFolhas, toon(0x6EC17A));
+  folhas.position.set(1.15, 1.05, .42);
+  folhas.userData.base = 0; folhas.userData.fase = angle;
+  anim.folhas.push(folhas); g.add(folhas);
 
   /* ── papéis empilhados ──────────────────────────────────── */
   for (let i = 0; i < 3; i++) {
-    const p = new THREE.Mesh(roundedBox(.42, .012, .56, .02), toon(0xFFFFFF));
-    p.position.set(.62, .85 + i * .014, -.05);
-    p.rotation.y = (Math.random() - .5) * .25; g.add(p);
+    const p = new THREE.Mesh(roundedBox(.42, .012, .56, .02), nada);
+    p.position.set(.95, .85 + i * .014, -.05);
+    p.rotation.y = (Math.random() - .5) * .25; bBranco.push(p);
   }
 
-  /* ── candeeiro = indicador de estado ────────────────────── */
-  const haste = new THREE.Mesh(new THREE.CylinderGeometry(.022, .022, .5, 8), GREY);
-  haste.position.set(1.12, 1.09, -.28); haste.rotation.z = -.28; g.add(haste);
-  const lampMat = new THREE.MeshStandardMaterial({ color: 0xCBD5E5, emissive: 0x000000, roughness: .3 });
+  /* ── candeeiro = indicador de estado ──────────────────────
+     Era um PointLight por secretária: cinco luzes reais na cena só
+     para dizer "este agente está a trabalhar". O bolbo emissivo já
+     dava o sinal sozinho; a luz saiu. */
+  const haste = new THREE.Mesh(new THREE.CylinderGeometry(.022, .022, .5, 8), nada);
+  haste.position.set(1.12, 1.09, -.28); haste.rotation.z = -.28; bCinza.push(haste);
+  const lampMat = new THREE.MeshLambertMaterial({ color: 0xCBD5E5, emissive: 0x000000 });
   const lamp = new THREE.Mesh(new THREE.SphereGeometry(.1, 16, 14), lampMat);
   lamp.position.set(1.0, 1.33, -.28); g.add(lamp);
-  const quebra = new THREE.Mesh(new THREE.ConeGeometry(.15, .18, 14, 1, true), toon(0xF1F5F9));
-  quebra.position.set(1.0, 1.4, -.28); quebra.rotation.z = .2; g.add(quebra);
-  const lampLight = new THREE.PointLight(accent, 0, 3.4);
-  lampLight.position.copy(lamp.position); g.add(lampLight);
+  const quebra = new THREE.Mesh(new THREE.ConeGeometry(.15, .18, 14, 1, true), nada);
+  quebra.position.set(1.0, 1.4, -.28); quebra.rotation.z = .2; bClaro.push(quebra);
 
-  /* Sem cadeira. Uma cadeira de escritório com rodas destoava de duas
-     maneiras dentro da cápsula: do gabinete high-tech, e dos robôs, que
-     não têm pernas e pairam — nunca se sentaram nela. Ainda por cima
-     espetava-se acima do rebordo e tapava o ecrã. */
+  /* ── as peças estáticas, fundidas por material ──────────── */
+  g.add(fundir(bCasca,  paredeMat));
+  g.add(fundir(bAcento, acc));
+  g.add(fundir(bBranco, WHITE()));
+  g.add(fundir(bCinza,  GREY));
+  g.add(fundir(bClaro,  toon(0xF1F5F9)));
+  g.add(fundir(bTeclas, toon(0xCBD5E5)));
+
+  /* ── cadeira ────────────────────────────────────────────── */
+  const cadeira = new THREE.Group();
+  const assento = new THREE.Mesh(roundedBox(.7, .12, .68, .1), WHITE());
+  assento.position.y = .52;
+  const costas = new THREE.Mesh(roundedBox(.66, .74, .11, .12), acc);
+  costas.position.set(0, .92, .3); costas.rotation.x = .12;
+  cadeira.add(assento, costas, contornos([[assento, 1.042], [costas, 1.042]]));
+  const poste = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .4, 10), GREY);
+  poste.position.y = .27; cadeira.add(poste);
+  const pernas = [], rodas = [];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const perna = new THREE.Mesh(roundedBox(.36, .05, .07, .025), nada);
+    perna.position.set(Math.cos(a) * .18, .08, Math.sin(a) * .18);
+    perna.rotation.y = -a; pernas.push(perna);
+    const roda = new THREE.Mesh(new THREE.SphereGeometry(.05, 8, 6), nada);
+    roda.position.set(Math.cos(a) * .34, .05, Math.sin(a) * .34); rodas.push(roda);
+  }
+  cadeira.add(fundir(pernas, GREY), fundir(rodas, toon(0x9AA7B8)));
+  cadeira.position.set(0, 0, 1.15); g.add(cadeira);
+  anim.cadeira = cadeira;
+
+  /* ── contornos do posto, todos numa malha ───────────────── */
+  g.add(contornos(bContorno));
+
+  /* ── manchas de sombra, no lugar do mapa de sombras ─────── */
+  g.add(sombra(3.3, 1.9, .8));                          // secretária
+  const sombraCadeira = sombra(1.15, 1.15, .7);
+  sombraCadeira.position.z = 1.15; g.add(sombraCadeira);
 
   /* ── robô ───────────────────────────────────────────────
-     Modelo GLB partido em cabeça, tronco e dois braços por
-     carregarRobo(). Continua sem pernas e a pairar: é o que
-     distingue um robô-brinquedo de um boneco humano. A viseira
-     escura vem pintada na textura e substitui cara, olhos e boca.
-
-     A casca leva a cor do agente a cheio, e é isso que distingue os
-     cinco de relance. Por consequência, as orelhas tiveram de deixar de
-     ser da cor do agente: sobre uma casca já dessa cor desapareciam, e
-     como o setStatus() as apagava para cinzento só se veriam com o
-     agente PARADO — ao contrário do que se quer. Passaram a creme, que
-     contrasta com qualquer tom da paleta e reata ao modelo original.
-
-     O sinal de estado ficou só nos olhos, e é o sítio certo: assentam na
-     viseira escura, onde tanto a cor acesa como o cinzento apagado se
-     leem. */
+     Lustroso e sem pernas, flutuando: é o que distingue um robô-
+     brinquedo de um boneco humano. A viseira escura substitui cara,
+     olhos e boca — lê-se melhor a esta distância do que feições. */
   const av = new THREE.Group();
-  const { pecas, pivos, visor, orelha } = PECAS;
+  /* Phong e não Physical. O Physical com `clearcoat` é o shader mais
+     caro que o three tem — dois lóbulos especulares por luz e por
+     fragmento — e o que ele dá aqui, o brilho lustroso de brinquedo, o
+     Phong dá com um `specular` alto por uma fracção do preço. */
+  const casca = new THREE.MeshPhongMaterial({
+    color: accent, shininess: 45, specular: 0x39424F,
+  });
+  const escuro = new THREE.MeshPhongMaterial({
+    color: 0x1E2836, shininess: 80, specular: 0x4A5566,
+  });
 
-  /* Duas faces, e não é decorativo: partir a malha deixa a cabeça e o
-     tronco abertos no pescoço, e ao rodar a cabeça a fronteira serrilhada
-     do corte abre uma fresta. Com uma face só, viam-se talhos negros a
-     dar para o fundo; com duas, a fresta mostra o interior da casca. */
-  const casca = toon(corCasca(accent), { side: THREE.DoubleSide });
-  const vidro = toon(VISEIRA, { side: THREE.DoubleSide });
-  const acento = new THREE.MeshBasicMaterial({ color: accent });   // olhos
-  const marfim = new THREE.MeshBasicMaterial({ color: CREME });    // orelhas
-
-  /** Monta uma peça: casca creme e viseira escura saem da mesma malha. */
-  function vestir(nome){
-    const sub = pecas[nome].userData.sub;
-    const partes = [];
-    if (sub.casca)   partes.push(new THREE.Mesh(sub.casca, casca));
-    if (sub.viseira) partes.push(new THREE.Mesh(sub.viseira, vidro));
-    partes.forEach(m => { m.castShadow = true; });
-    return partes;
-  }
-
-  /* O contorno sai da peça INTEIRA, não das sub-peças: a casca sozinha
-     tem o buraco da viseira, e a casca invertida desse buraco desenhava
-     uma mancha escura no meio da cara. */
-  function contorno(nome, k){
-    const o = outline(new THREE.Mesh(pecas[nome], casca), k);
-    o.position.copy(pivos[nome]);
-    return o;
-  }
-
-  vestir('corpo').forEach(m => { m.position.copy(pivos.corpo); av.add(m); });
-  av.add(contorno('corpo', 1.03));
+  const corpo = new THREE.Mesh(new THREE.CapsuleGeometry(.27, .3, 6, 16), casca);
+  corpo.position.y = .95;
+  av.add(corpo, outline(corpo, 1.05));
 
   const cabeca = new THREE.Group();
-  cabeca.position.copy(pivos.cabeca);
-  vestir('cabeca').forEach(m => cabeca.add(m));
-  // dentro da cabeça o pivô já é a origem, por isso o contorno vai a zero
-  const cc = outline(new THREE.Mesh(pecas.cabeca, casca), 1.03);
-  cabeca.add(cc);
+  const cranio = new THREE.Mesh(new THREE.SphereGeometry(.245, 16, 12), casca);
+  cranio.scale.set(1, .94, .94);
+  cabeca.add(cranio, outline(cranio, 1.05));
 
-  // discos de marfim nas orelhas: contraste fixo contra a casca viva
-  [-1, 1].forEach(lado => {
-    const d = new THREE.Mesh(new THREE.SphereGeometry(.055, 14, 12), marfim);
-    d.scale.set(.5, .82, .82);
-    d.position.set(orelha.x * lado, orelha.y, orelha.z);
-    cabeca.add(d);
-  });
+  // viseira: casca esférica recortada, encostada à frente da cabeça
+  const viseira = new THREE.Mesh(
+    new THREE.SphereGeometry(.235, 18, 12, -0.95, 1.9, 0.75, 0.95),
+    escuro
+  );
+  viseira.position.z = .022; viseira.scale.set(1, 1, 1.06);
+  cabeca.add(viseira);
 
-  [-.072, .072].forEach((x, i) => {
-    const olho = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 10), acento);
-    olho.scale.set(1.5, 1, .42);
-    olho.position.set(x, visor.y, visor.z);
-    anim.olhos.push(olho); cabeca.add(olho);
-    // Os dois olhos partilham a material, por isso basta uma referência
-    // para o setStatus() acender ou apagar o par.
-    if (i === 0) anim.bolbo = olho;
-  });
+  /* Os dois olhos numa malha só. Nascem à volta da origem e é a malha
+     que vai para a cara, para que o piscar — escala em Y — aconteça à
+     volta deles em vez de os arrastar pela cabeça. */
+  const olhos = fundir([-.075, .075].map(x => {
+    const o = new THREE.Mesh(new THREE.SphereGeometry(.028, 8, 6), nada);
+    o.scale.set(1.5, 1, .5); o.position.x = x;
+    return o;
+  }), new THREE.MeshBasicMaterial({ color: 0xEAF6FF }));
+  olhos.position.set(0, -.005, .225);
+  anim.olhos.push(olhos); cabeca.add(olhos);
 
-  av.add(cabeca);
+  // antena com luz — acompanha o estado do agente
+  const antena = new THREE.Mesh(new THREE.CylinderGeometry(.014, .014, .16, 6), escuro);
+  antena.position.y = .27; cabeca.add(antena);
+  const bolbo = new THREE.Mesh(new THREE.SphereGeometry(.045, 10, 8),
+    new THREE.MeshBasicMaterial({ color: accent }));
+  bolbo.position.y = .36; cabeca.add(bolbo);
+  anim.bolbo = bolbo;
+
+  cabeca.position.y = 1.42; av.add(cabeca);
   anim.cabeca = cabeca;
 
-  /* Os braços vêm em T-pose, esticados em ±X. Rodá-los em X nesse estado
-     só os fazia girar sobre o próprio eixo — invisível. Por isso levam um
-     rotation.z fixo que os baixa, e a animação continua a mexer só em
-     rotation.x: no Euler XYZ do Three.js o Z aplica-se primeiro, logo o
-     braço desce e só depois balança para a frente.
-
-     QUEDA é um compromisso medido no ecrã: a 76° os braços dobravam-se
-     contra o corpo e liam-se como barbatanas; a 0° ficavam na horizontal
-     mas o balanço em X tornava-se invisível por ser sobre o próprio eixo. */
-  const QUEDA = .78;
-  [['bracoL', -1], ['bracoR', 1]].forEach(([nome, lado]) => {
+  // mãos soltas, sem braços: é o truque que mantém o ar de brinquedo
+  [[-.34, -1], [.34, 1]].forEach(([x, lado]) => {
     const braco = new THREE.Group();
-    braco.position.copy(pivos[nome]);
-    vestir(nome).forEach(m => braco.add(m));
-    braco.rotation.set(-.42, 0, -lado * QUEDA);
-    braco.userData.baseX = -.42;
+    const mao = new THREE.Mesh(new THREE.SphereGeometry(.088, 10, 8), casca);
+    mao.scale.set(1, .82, 1);
+    mao.position.y = -.34;
+    braco.add(mao, outline(mao, 1.06));
+    braco.position.set(x, 1.14, 0);
+    braco.rotation.set(-.62, 0, lado * .12);
+    braco.userData.baseX = -.62;
     anim.bracos.push(braco); av.add(braco);
   });
 
   // anel de flutuação por baixo, em vez de pernas
   const anel = new THREE.Mesh(
-    new THREE.TorusGeometry(.2, .035, 10, 24),
+    new THREE.TorusGeometry(.2, .035, 8, 16),
     new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: .38 })
   );
-  anel.rotation.x = Math.PI / 2; anel.position.y = FLUTUA - .07;
+  anel.rotation.x = Math.PI / 2; anel.position.y = .6;
   av.add(anel); anim.anel = anel;
+
+  /* Mancha de sombra do robô. O `tick` desconta-lhe o salto, senão
+     subia com ele e deixava de assentar no chão. */
+  const sombraRobo = sombra(1.25, 1.25, .85);
+  av.add(sombraRobo); anim.sombra = sombraRobo;
 
   // O robô NÃO é filho da secretária: tem de atravessar a sala até ao
   // lounge, e um filho de um grupo rodado não anda em linha reta pelo
   // mundo. Vive na cena, e a secretária limita-se a dizer-lhe qual é o
   // seu lugar — mesmo ângulo, um pouco mais para dentro, virado para o
   // monitor.
-  /* 0.80 e não 1.12 como antes: a cápsula do gabinete tem a boca em z 0.93,
-     e ao raio antigo o robô pairava à porta do seu gabinete em vez de
-     dentro dele. */
   const lugar = {
-    x: Math.sin(angle) * (R - 0.80), y: 0,
-    z: Math.cos(angle) * (R - 0.80), ry: angle,
+    x: Math.sin(angle) * (R - 1.12), y: 0,
+    z: Math.cos(angle) * (R - 1.12), ry: angle,
   };
   av.position.set(lugar.x, 0, lugar.z);
   av.rotation.y = lugar.ry;
@@ -1242,7 +986,7 @@ function buildDesk(agent, angle) {
   g.traverse(o => { o.userData.agentId = agent.id; });
   scene.add(g);
 
-  return { group: g, screen, lamp, lampLight, avatar: av, accent,
+  return { group: g, screen, lamp, avatar: av, accent,
            status: 'idle', anim, lugar, slot: null };
 }
 
@@ -1258,38 +1002,45 @@ function buildLounge(){
   const almofada = toon(0xDCE4F0);
   const pes = toon(0x8A7663);
 
-  /* ── sofá ───────────────────────────────────────────────── */
+  /* ── sofá ─────────────────────────────────────────────────
+     As mesmas peças nas mesmas medidas, mas fundidas por material:
+     um sofá que eram 13 chamadas de desenho passa a cinco. */
   const sofa = new THREE.Group();
   const assento = new THREE.Mesh(roundedBox(3.5, .42, 1.3, .16), tecido);
-  assento.position.y = .46; assento.castShadow = assento.receiveShadow = true;
-  sofa.add(assento, outline(assento, 1.02));
+  assento.position.y = .46;
 
   const encosto = new THREE.Mesh(roundedBox(3.5, 1.0, .3, .14), tecido);
-  encosto.position.set(0, .92, -.52); encosto.castShadow = true;
-  sofa.add(encosto, outline(encosto, 1.02));
+  encosto.position.set(0, .92, -.52);
 
-  [-1.66, 1.66].forEach(x => {
-    const braco = new THREE.Mesh(roundedBox(.34, .66, 1.3, .15), tecido);
-    braco.position.set(x, .6, 0); braco.castShadow = true;
-    sofa.add(braco, outline(braco, 1.03));
+  const bracos = [-1.66, 1.66].map(x => {
+    const b = new THREE.Mesh(roundedBox(.34, .66, 1.3, .15), tecido);
+    b.position.set(x, .6, 0);
+    return b;
   });
+
+  sofa.add(fundir([assento, encosto, ...bracos], tecido));
+  sofa.add(contornos([[assento, 1.028], [encosto, 1.028],
+                      [bracos[0], 1.042], [bracos[1], 1.042]]));
 
   // almofadas ligeiramente desalinhadas: um sofá perfeitamente
   // alinhado parece catálogo, não sala de estar
-  [-1.02, 0, 1.02].forEach((x, i) => {
+  sofa.add(fundir([-1.02, 0, 1.02].map((x, i) => {
     const a = new THREE.Mesh(roundedBox(.96, .18, 1.02, .12), almofada);
     a.position.set(x, .7, .04);
     a.rotation.y = (i - 1) * .035;
-    sofa.add(a);
-  });
+    return a;
+  }), almofada));
 
-  [[-1.5, .5], [1.5, .5], [-1.5, -.45], [1.5, -.45]].forEach(([x, z]) => {
+  sofa.add(fundir([[-1.5, .5], [1.5, .5], [-1.5, -.45], [1.5, -.45]].map(([x, z]) => {
     const p = new THREE.Mesh(new THREE.CylinderGeometry(.06, .05, .26, 8), pes);
-    p.position.set(x, .13, z); sofa.add(p);
-  });
+    p.position.set(x, .13, z);
+    return p;
+  }), pes));
 
   sofa.position.set(0, 0, LOUNGE_Z);
   grupo.add(sofa);
+  const sombraSofa = sombra(4.4, 2.0, .8);
+  sombraSofa.position.z = LOUNGE_Z; grupo.add(sombraSofa);
 
   // tapete da sala de estar
   const tapete = new THREE.Mesh(
@@ -1302,10 +1053,9 @@ function buildLounge(){
 
   /* ── bola ───────────────────────────────────────────────── */
   const bola = new THREE.Group();
-  const esfera = new THREE.Mesh(new THREE.SphereGeometry(.3, 24, 20), toon(0xF08A5D));
-  esfera.castShadow = true;
+  const esfera = new THREE.Mesh(new THREE.SphereGeometry(.3, 16, 12), toon(0xF08A5D));
   bola.add(esfera, outline(esfera, 1.05));
-  const faixa = new THREE.Mesh(new THREE.TorusGeometry(.3, .045, 10, 28), toon(0xFFF3E6));
+  const faixa = new THREE.Mesh(new THREE.TorusGeometry(.3, .045, 8, 18), toon(0xFFF3E6));
   faixa.rotation.x = Math.PI / 2; bola.add(faixa);
   bola.position.set(3.5, .3, LOUNGE_Z + 3.0);
   grupo.add(bola);
@@ -1316,33 +1066,41 @@ function buildLounge(){
   const claro = toon(0xF6E3CC);
   const preto = new THREE.MeshBasicMaterial({ color: 0x2A3342 });
 
-  const corpo = new THREE.Mesh(new THREE.SphereGeometry(.3, 20, 16), pelo);
-  corpo.scale.set(.86, 1.05, .92); corpo.position.y = .3; corpo.castShadow = true;
-  gato.add(corpo, outline(corpo, 1.06));
+  const corpo = new THREE.Mesh(new THREE.SphereGeometry(.3, 14, 10), pelo);
+  corpo.scale.set(.86, 1.05, .92); corpo.position.y = .3;
 
-  const peito = new THREE.Mesh(new THREE.SphereGeometry(.17, 14, 12), claro);
+  // patas da frente: mesmo material do tronco, logo mesma malha
+  const patas = [-.12, .12].map(x => {
+    const p = new THREE.Mesh(roundedBox(.11, .09, .26, .045), pelo);
+    p.position.set(x, .05, .2);
+    return p;
+  });
+  gato.add(fundir([corpo, ...patas], pelo), outline(corpo, 1.06));
+
+  const peito = new THREE.Mesh(new THREE.SphereGeometry(.17, 10, 8), claro);
   peito.scale.set(.8, 1, .55); peito.position.set(0, .27, .19); gato.add(peito);
 
   const cabecaG = new THREE.Group();
-  const cranioG = new THREE.Mesh(new THREE.SphereGeometry(.23, 20, 16), pelo);
-  cranioG.scale.set(1, .92, .94); cranioG.castShadow = true;
-  cabecaG.add(cranioG, outline(cranioG, 1.06));
+  const cranioG = new THREE.Mesh(new THREE.SphereGeometry(.23, 14, 10), pelo);
+  cranioG.scale.set(1, .92, .94);
 
-  [-.13, .13].forEach(x => {
-    const orelha = new THREE.Mesh(new THREE.ConeGeometry(.085, .17, 4), pelo);
-    orelha.position.set(x, .2, -.02);
-    orelha.rotation.z = x < 0 ? .22 : -.22;
-    cabecaG.add(orelha);
+  const orelhas = [-.13, .13].map(x => {
+    const o = new THREE.Mesh(new THREE.ConeGeometry(.085, .17, 4), pelo);
+    o.position.set(x, .2, -.02);
+    o.rotation.z = x < 0 ? .22 : -.22;
+    return o;
   });
+  cabecaG.add(fundir([cranioG, ...orelhas], pelo), outline(cranioG, 1.06));
 
-  const olhosG = [];
-  [-.085, .085].forEach(x => {
-    const o = new THREE.Mesh(new THREE.SphereGeometry(.032, 10, 8), preto);
-    o.scale.set(.7, 1.25, .6); o.position.set(x, .02, .2);
-    olhosG.push(o); cabecaG.add(o);
-  });
+  const olhosG = fundir([-.085, .085].map(x => {
+    const o = new THREE.Mesh(new THREE.SphereGeometry(.032, 8, 6), preto);
+    o.scale.set(.7, 1.25, .6); o.position.x = x;
+    return o;
+  }), preto);
+  olhosG.position.set(0, .02, .2);
+  cabecaG.add(olhosG);
 
-  const focinho = new THREE.Mesh(new THREE.SphereGeometry(.09, 12, 10), claro);
+  const focinho = new THREE.Mesh(new THREE.SphereGeometry(.09, 10, 8), claro);
   focinho.scale.set(1.15, .8, .7); focinho.position.set(0, -.075, .19);
   cabecaG.add(focinho);
   const nariz = new THREE.Mesh(new THREE.ConeGeometry(.028, .03, 3), toon(0xE07A8A));
@@ -1351,12 +1109,6 @@ function buildLounge(){
 
   cabecaG.position.set(0, .68, .04);
   gato.add(cabecaG);
-
-  // patas da frente
-  [-.12, .12].forEach(x => {
-    const pata = new THREE.Mesh(roundedBox(.11, .09, .26, .045), pelo);
-    pata.position.set(x, .05, .2); gato.add(pata);
-  });
 
   // cauda em segmentos: é o que permite o abanar em onda
   const cauda = [];
@@ -1367,6 +1119,7 @@ function buildLounge(){
 
   gato.position.set(-3.5, 0, LOUNGE_Z + 2.1);
   gato.rotation.y = .7;
+  gato.add(sombra(.95, .95, .7));
   grupo.add(gato);
 
   scene.add(grupo);
@@ -1393,15 +1146,16 @@ const holoDisc = new THREE.Mesh(
   new THREE.CylinderGeometry(1.5,1.5,.05,48),
   new THREE.MeshStandardMaterial({ color:0xFFFFFF, roughness:.4 })
 );
-holoDisc.position.y = .05; holoDisc.receiveShadow = true; holo.add(holoDisc);
+holoDisc.position.y = .05; holo.add(holoDisc);
 const holoCore = new THREE.Mesh(
   new THREE.IcosahedronGeometry(.62, 1),
   new THREE.MeshStandardMaterial({ color:0x3B82F6, emissive:0x3B82F6, emissiveIntensity:.5,
     transparent:true, opacity:.55, roughness:.2, wireframe:true })
 );
 holoCore.position.y = 1.5; holo.add(holoCore);
-const holoLight = new THREE.PointLight(0x3B82F6, .8, 6);
-holoLight.position.set(0,1.5,0); holo.add(holoLight);
+/* Era aqui um PointLight azul. Saiu: cada luz é avaliada em TODOS os
+   fragmentos da cena, não só nos que estão perto dela, e o núcleo do
+   holograma já é emissivo — o brilho dele não dependia da luz. */
 scene.add(holo);
 
 /* ---------------- estado + UI ---------------- */
@@ -1444,8 +1198,6 @@ function setStatus(id, status){
   if(d.anim?.bolbo) d.anim.bolbo.material.color.setHex(on ? col : 0xCBD5E5);
   d.lamp.material.color.setHex(on ? col : 0xCBD5E5);
   d.lamp.material.emissive.setHex(on ? col : 0x000000);
-  d.lampLight.color.setHex(col);
-  d.lampLight.intensity = on ? 1.4 : 0;
   d.screen.material.emissive.setHex(col);
   d.screen.material.emissiveIntensity = status === 'working' ? .55 : on ? .3 : .12;
 
@@ -1599,14 +1351,7 @@ async function loadStats(){
 }
 
 async function init(){
-  // O robô tem de estar carregado e partido antes do primeiro buildDesk:
-  // é dele que saem as geometrias das peças. Corre em paralelo com /agents
-  // para não somar as duas esperas.
-  const [list] = await Promise.all([
-    fetch('/agents').then(r => r.json()),
-    carregarRobo(),
-    carregarGabinete(),
-  ]);
+  const list = await (await fetch('/agents')).json();
   const sorted = ORDER.map(id => list.find(a => a.id === id)).filter(Boolean);
   list.forEach(a => { if(!sorted.includes(a)) sorted.push(a); });
 
@@ -1766,20 +1511,66 @@ function anguloSuave(de, para, k){
   return de + d*k;
 }
 
-let ultimoT = 0;
+/* ---------------- teto de fps e modo leve ----------------
 
-function tick(){
+   Desenha-se a 30 fps e não aos 60 que o browser oferece: os bonecos
+   baloiçam devagar e ninguém vê a diferença, mas o custo é metade. Com
+   o separador escondido não se desenha nada.
+
+   O limiar é 29 ms, não 33.3 (=1000/30). O requestAnimationFrame chega
+   de 16.7 em 16.7 ms com jitter, e ao pedir exactamente 33.3 há pares
+   de frames que dão 33.2 e são recusados — o desenho seguinte só vem ao
+   terceiro e o ritmo real fica em 18.7 fps. A folga tem de caber num
+   frame inteiro; qualquer valor entre 17 e 33 dá 30 certos.
+
+   E há um vigia: se os primeiros 4 s não chegarem a 24 fps, cai para
+   MODO LEVE — resolução a 70%, 20 fps, grelha e vapor fora. É ele que
+   garante o mínimo numa máquina sem GPU, em vez de se assumir que a
+   detecção do renderizador está disponível (o Chrome esconde-a em
+   muitas configurações).
+
+   A bandeira `vigiaFeito` não é acessória: sem ela, uma máquina rápida
+   passava no teste, o relógio continuava a andar, a condição do tempo
+   voltava a dar verdadeira no frame seguinte com o contador zerado, e
+   despromovia justamente quem não precisava. */
+let leve = false;
+
+function modoLeve(){
+  if(leve) return;
+  leve = true;
+  renderer.setPixelRatio(.7);
+  renderer.setSize(innerWidth, innerHeight);
+  grid.visible = false;
+  for(const d of Object.values(desks)) d.anim.steam.forEach(s => { s.visible = false; });
+}
+
+let ultimoT = 0, ultimoDesenho = 0, frames = 0, inicioVigia = 0, vigiaFeito = false;
+
+function tick(agora){
   requestAnimationFrame(tick);
+  if(document.hidden) return;
+
+  const intervalo = leve ? 44 : 29;
+  if(agora - ultimoDesenho < intervalo) return;
+  ultimoDesenho = agora;
+
+  if(!inicioVigia) inicioVigia = agora;
+  else if(!vigiaFeito && agora - inicioVigia > 4000){
+    vigiaFeito = true;
+    if(frames / ((agora - inicioVigia) / 1000) < 24) modoLeve();
+  }
+  frames++;
+
   const t = clock.getElapsedTime();
 
   holoCore.rotation.y = t*.35;
   holoCore.rotation.x = Math.sin(t*.25)*.18;
   holoCore.position.y = 1.5 + Math.sin(t*1.1)*.07;
-  holoLight.intensity = pipelineOn ? .9 + Math.sin(t*3)*.4 : .5;
+  holoCore.material.emissiveIntensity = pipelineOn ? .9 + Math.sin(t*3)*.4 : .5;
 
   // dt real: o Clock do three consome o delta dentro de getElapsedTime(),
   // por isso derivamo-lo do tempo acumulado em vez de pedir getDelta().
-  const dt = Math.min(t - ultimoT, .05); ultimoT = t;
+  const dt = Math.min(t - ultimoT, .12); ultimoT = t;
 
   for(const d of Object.values(desks)){
     const a = d.anim; if(!a || !d.slot) continue;
@@ -1823,21 +1614,20 @@ function tick(){
     a.cabeca.rotation.x = trabalha && !aAndar ? .16 + Math.sin(t*6)*.03
       : passatempo === 'gato' ? .3
       : Math.sin(t*.7 + semente)*.05;
-    // Amplitude curta de propósito. A cabeça do modelo é muito maior que a
-    // esfera que aqui estava antes, e como é uma peça cortada da mesma malha
-    // que o tronco, cada grau a mais abre a fresta do pescoço. A .28 rad
-    // via-se o corte; aqui ainda se lê "a olhar em volta" e o pescoço fecha.
     a.cabeca.rotation.y = aAndar ? 0
       : trabalha ? Math.sin(t*2.3)*.05
-      : Math.sin(t*.45 + semente)*.13;
+      : Math.sin(t*.45 + semente)*.28;
 
     const piscar = (t + semente) % 4.2 > 4.06 ? .12 : 1;
     a.olhos.forEach(o => { o.scale.y = piscar; });
 
-    a.screenTex.offset.y -= (trabalha ? .0055 : .0007);
+    a.cadeira.rotation.y = Math.sin(t*.5 + semente)*(trabalha ? .04 : .12);
+    a.screenTex.offset.y -= (trabalha ? .011 : .0014);
     a.anel.material.opacity = aAndar ? .55 + Math.sin(t*10)*.2 : .34;
 
-    a.steam.forEach(s => {
+    a.sombra.position.y = .022 - av.position.y;   // fica no chão
+
+    if(!leve) a.steam.forEach(s => {
       const f = ((t*.42 + s.userData.fase) % 1);
       s.position.y = 1.05 + f*.42;
       s.scale.setScalar(.6 + f*1.5);
@@ -1850,7 +1640,6 @@ function tick(){
 
     if(trabalha && !aAndar){
       d.screen.material.emissiveIntensity = .45 + Math.sin(t*9)*.2;
-      d.lampLight.intensity = 1.1 + Math.sin(t*4.5)*.5;
     }
   }
 
@@ -1882,8 +1671,7 @@ function tick(){
     const festas = ocupa('gato');
     lounge.cabeca.rotation.x += ((festas ? -.22 : 0) - lounge.cabeca.rotation.x)*.05;
     lounge.cabeca.rotation.z = festas ? Math.sin(t*1.7)*.09 : 0;
-    const piscaGato = t % 5.4 > 5.22 ? .15 : 1.25;
-    lounge.olhos.forEach(o => { o.scale.y = piscaGato; });
+    lounge.olhos.scale.y = t % 5.4 > 5.22 ? .15 : 1.25;
   }
 
   posicionarPins();
@@ -1912,7 +1700,10 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-init().then(tick).catch(e => { ui.conn.textContent = 'erro'; console.error(e); });
+// O tick recebe agora o carimbo de tempo do rAF, por isso não pode ser
+// chamado à mão: entra pelo requestAnimationFrame.
+init().then(() => requestAnimationFrame(tick))
+      .catch(e => { ui.conn.textContent = 'erro'; console.error(e); });
 </script>
 </body>
 </html>

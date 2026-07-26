@@ -1,365 +1,373 @@
-# Continuidade — escritório high-tech com módulos do Meshy
+# Continuidade — o escritório 3D
 
-Documento para o próximo Claude. Escrito a 2026-07-26 por uma sessão que
-ficou sem contexto a meio da integração. Lê isto antes de tocar no código.
-
-O `HANDOFF.md` da raiz continua válido para o resto do projeto. Isto cobre
-só o trabalho do escritório 3D.
+Documento para o próximo Claude. Reescrito a 2026-07-26. O `HANDOFF.md`
+da raiz continua válido para o resto do projeto; isto cobre só o
+escritório 3D do `office.html`.
 
 ---
 
-## Estado: modelos prontos, integração a meio
+## Estado: o escritório cartoon do commit `9eb9b72`, acelerado 5×
 
-O utilizador pediu: *"o escritório, um ambiente isolado e hightech para os
-robots trabalharem lá dentro, e usar o mesmo mecanismo, terem um sitio para
-brincar, e quando vão trabalhar, deslocam se para o seu gabinete de
-escritório, com a sua cor destacada"*.
+A cena é a mesma que se via no commit `9eb9b72` — cubículos com cantos
+arredondados, toon shading, contornos de desenho animado, cadeiras de
+rodas, robôs lustrosos em cápsula, gato e sofá. **O aspeto é o ponto e
+não se mexe nele.** O que mudou foi o custo.
 
-### O que já está feito e verificado
+Houve pelo meio uma passagem por modelos GLB do Meshy (commits `8f6773c`
+e `a3c1892`) e uma reescrita low-poly. As duas foram abandonadas: a
+primeira era lenta e feia de trás, a segunda era rápida mas angular.
+O utilizador escolheu explicitamente este aspeto, e a tarefa passou a
+ser mantê-lo a correr depressa.
 
-**`orchestrator/public/modelos/`** — três GLB, 6.8 MB no total:
+### O orçamento
 
-| Ficheiro | Triângulos | L×A×P nativo | Peso |
-|---|---|---|---|
-| `robo.glb` | 7554 | 1.90 × 1.89 × 0.98 | 1.95 MB |
-| `gabinete.glb` | 6808 | 1.899 × 1.561 × 1.061 | 2.52 MB |
-| `lounge.glb` | 6670 | 1.898 × 1.427 × 1.718 | 2.37 MB |
+A regra é: **30 fps com WebGL por software**, numa máquina sem
+aceleração gráfica.
 
-O `robo.glb` **está integrado, publicado na VPS e em git** (commit
-`8f6773c`). O `gabinete.glb` e o `lounge.glb` estão gerados e por integrar.
-
-### Decisões de âmbito já tomadas com o utilizador
-
-1. **O Meshy gera só os módulos que repetem; a sala é procedural.** Um
-   interior inteiro do Meshy não serve: vem como uma malha única em escala
-   arbitrária, não tem onde encaixar o arco de 5 postos em ângulos exatos,
-   e a câmara orbita 360° e ficaria com parede à frente.
-2. **Fecho da sala: parede cilíndrica com desvanecimento.** Sala completa
-   de raio ~12, com os segmentos entre a câmara e o centro a ficarem
-   transparentes conforme ela orbita. Escolhido pelo utilizador em
-   alternativa a "parede só atrás" e a "plataforma no vazio".
-3. **O gabinete dá só a mobília.** Ficam procedurais o ecrã (tem textura de
-   código a correr e emissivo por estado), a lâmpada (cor e luz por
-   estado), o vapor do café e as folhas da planta — o código controla-os e
-   o Meshy não exporta nada disso.
-
----
-
-## O que falta fazer, por ordem
-
-1. ~~Generalizar o carregador~~ **FEITO.** Helpers partilhados no
-   `office.html`: `amostrador()`, `AMOSTRAS`, `classeCor()`,
-   `recortarTris()`, `carregarMalha()`.
-2. ~~Cinco gabinetes no arco~~ **FEITO, com defeitos conhecidos** — ver
-   secção abaixo. `carregarGabinete()` + o bloco "o gabinete" na
-   `buildDesk()`.
-3. **Sala procedural** — parede cilíndrica com desvanecimento, teto,
-   calhas no teto por gabinete, halo no chão. **É AQUI QUE PEGAS.**
-4. **Cápsula de descanso** a substituir o sofá do `buildLounge()`,
-   mantendo os `slot` onde os robôs brincam. O `lounge.glb` está gerado e
-   por integrar; usa o mesmo `carregarMalha()` + `classeCor()`.
-
-### Etapa 2: o que ficou a funcionar
-
-Verificado em Chrome headless, sem exceções, 5 agentes montados:
-
-- Os cinco gabinetes entram no arco na orientação certa. A cápsula abre
-  para o centro da sala. **Não precisa de rotação própria**: o grupo do
-  posto já vem rodado de `angle + π`, e o modelo tem a abertura em +z.
-- A bancada do módulo aterra exactamente nos 0.78 da secretária antiga,
-  por isso teclado, rato, caneca, planta, papéis e candeeiro não
-  precisaram de mudar de altura. Foi de propósito: medi que a bancada
-  está a 40% da altura do modelo e escolhi a escala a partir disso
-  (`GAB_BANCADA / GAB_FRACAO`).
-- **As calhas acendem na cor do agente** e leem-se sob o friso escuro.
-- O ecrã procedural assenta no painel que o carregador mede na malha
-  (`ecra.x/y/z/largura/altura`), não numa posição adivinhada.
-- O robô a trabalhar passou a parar a `R - 0.80` em vez de `R - 1.12`:
-  com a profundidade esticada a boca da cápsula fica em z 0.93, e ao raio
-  antigo ele pairava à porta do gabinete em vez de dentro dele.
-
-### Etapa 2: defeitos que ficaram, por ordem de gravidade
-
-1. **A calha sai serrilhada.** Dentes de serra em vez de linha limpa,
-   bem visível a 3× de ampliação no rebordo. É intrínseco a classificar
-   triângulos inteiros numa feature de um triângulo de largura. Opções:
-   (a) desenhar a calha proceduralmente — um `TorusGeometry` ou tubo ao
-   longo do rebordo, medido na malha, em vez de a herdar da textura;
-   (b) subdividir os triângulos da fronteira; (c) aceitar, porque à
-   distância da câmara por omissão a linha é fina e o serrilhado quase
-   não se nota. **Recomendo (a)**: é o que dá uma linha limpa e permite
-   controlar a espessura e o brilho da cor do agente.
-2. **De trás, a cápsula é uma tina creme.** Todo o carácter high-tech —
-   ecrã, calhas interiores — está do lado da abertura, e da câmara por
-   omissão vêem-se as traseiras das cápsulas centrais. Já acontecia com
-   as divisórias antigas, mas agora a massa é maior. A sala procedural
-   (etapa 3) pode compensar com as calhas do teto sobre cada gabinete.
-3. **A cadeira foi removida** — era uma cadeira de escritório com rodas
-   que destoava do gabinete e dos robôs sem pernas, e espetava-se acima
-   do rebordo a tapar o ecrã. `anim.cadeira` **já não existe**, e a linha
-   que a rodava saiu do `tick()`. Se quiseres um assento, gera-o no Meshy
-   junto com o resto.
-4. **Os objetos foram puxados para dentro** porque atravessavam a parede
-   curva: caneca `-1.02 → -0.80`, planta `1.15 → 0.88`, rato `0.72 → 0.55`,
-   papéis `0.95 → 0.62`, e o z de cada um encurtado. Se mexeres na escala
-   do módulo, estes valores têm de acompanhar.
-5. `NOTE_CORES` e os post-its saíram (o cubículo já não tem parede plana
-   onde os colar).
-
-### Constantes da etapa 2
-
-```js
-GAB_BANCADA = 0.78   // altura da bancada, herdada da secretária antiga
-GAB_FRACAO  = 0.40   // a que fração da altura do modelo ela está (MEDIDO)
-GAB_FUNDO   = 1.40   // esticão só na profundidade
-                     // → escala 1.2492, cápsula 2.37 L × 1.95 A × 1.86 P
-```
-
-A profundidade leva esticão à parte porque à escala uniforme a cápsula
-ficava rasa (1.33) e o robô pairava fora dela.
-
----
-
-## O que descobri e não é óbvio no código
-
-### As calhas de luz são uma TERCEIRA cor
-
-O robô tem duas cores e a classificação é a duas (luminância < 64 → friso
-escuro, resto → casca). Os módulos novos têm três, e o ciano das calhas
-tem luminância ~140: com a regra do robô **caía no lado do creme e as
-calhas desapareciam** — e são elas que carregam a cor do agente.
-
-Medido na textura do gabinete (2048×2048):
-
-| Classe | Área | Cor média | Como se apanha |
-|---|---|---|---|
-| friso escuro | 16.5% | `#151e2e` | luminância 29, abaixo de 64 |
-| calha de luz | 1.0% | `#25bbd2` | saturação 0.82, acima de 0.30 |
-| casca creme | 82.5% | `#f3efe1` | saturação 0.07 |
-
-### Mediana para o escuro, MÁXIMO para a calha
-
-Testei a classificação ao nível do triângulo antes de escrever integração,
-e foi bem feito: com a mediana das 7 amostras só **161 triângulos (2.4%)**
-saíam como calha, porque são linhas finas que não dominam nenhum triângulo.
-Usando o **máximo de saturação (> 0.45)** sobem para **425 (6.2%)**.
-
-Não é incoerência usar critérios diferentes: o friso escuro é área grande
-e a mediana acerta-lhe; as calhas são linhas finas e à distância da câmara
-uma calha de um triângulo de largura fica sub-pixel. Vale enviesar a favor
-de a mostrar.
-
-Regra final a implementar:
-
-```js
-const LIMIAR    = 64;     // luminância: abaixo disto é friso escuro
-const SAT_CALHA = 0.45;   // saturação máxima: acima disto é calha de luz
-
-// mediana de 7 para a luminância, máximo de 7 para a saturação
-if (medianaLum < LIMIAR)   return 'escuro';
-if (maxSaturacao > SAT_CALHA) return 'calha';
-return 'casca';
-```
-
-O robô passa por este classificador sem mudar de aspeto: o azul-marinho
-dele tem saturação 0.94 **mas** luminância 29, e o teste do escuro vem
-primeiro. O creme dele tem saturação 0.145, abaixo de 0.45. Ou seja o robô
-fica com `escuro` + `casca` e `calha` vazia. **Confirma isto se mexeres nos
-limiares.**
-
-### Peças cortadas de uma malha abrem frestas ao rodar
-
-Já resolvido no robô, mas vale para qualquer peça que venhas a partir e
-animar: ao rodar a cabeça, a fronteira serrilhada do corte no pescoço abre
-e via-se o fundo. A correção foi `side: THREE.DoubleSide` nos materiais
-(a fresta passa a mostrar o interior da casca) **mais** reduzir a amplitude
-do giro de 0.28 para 0.13 rad.
-
-### O detetor de recortes das folhas de referência
-
-O `crop` que fiz assumia fundo branco e falhou na folha da zona de brincar,
-que veio com fundo cinzento **mais escuro** que o creme dos módulos — a
-imagem inteira passou por conteúdo. A versão que funciona decide por
-**cromaticidade (max−min dos canais) > 6 OU desvio de luminância face ao
-fundo amostrado nos quatro cantos > 12**. Só um dos dois critérios não
-basta: num fundo cinzento o creme quase não difere em luminância mas tem
-cromaticidade; num fundo branco um painel cinzento não tem cromaticidade
-mas difere muito em luminância.
-
-Também: o gerador escreve rótulos "FRONT/SIDE/BACK" na imagem apesar de se
-pedir sem texto. O recorte tem de agrupar as linhas contíguas de conteúdo e
-ficar só com a maior, senão as letras entram no recorte e o Meshy modela-as.
-
-### A cena tem dois temas
-
-`pintarCena(tema)` no fim do `office.html` repinta fundo, nevoeiro, chão e
-tapete. **A sala nova tem de entrar lá**, senão fica clara no tema escuro.
-O Chrome headless pede tema escuro por omissão, o que explica capturas
-escuras.
-
----
-
-## Medidas da cena que a integração tem de respeitar
-
-```
-R = 7.4                 raio do arco de secretárias
-spread = π · 0.86       abertura 154.8°, 5 postos
-espaçamento = 5.00      entre centros de postos, ao longo do arco
-ângulos = -77.4, -38.7, 0, 38.7, 77.4 graus
-
-posto i:  g.position = (sin θ · 7.4, 0, cos θ · 7.4)
-          g.rotation.y = θ + π          → a frente do posto olha o centro
-robô a trabalhar: raio 7.4 − 1.12 = 6.28, mesmo ângulo
-lounge: z = −7.2 (lado oposto do arco)
-
-chão: círculo raio 24     tapete central: raio 5.2     grelha 48×48
-câmara: perspetiva 42°, em (−2, 13, 19.5), alvo (0, 1.3, −0.6)
-OrbitControls: azimute LIVRE (360°), maxPolarAngle π/2.2, distância 7 a 34
-```
-
-A parede cilíndrica tem de ter raio > 7.4 + profundidade do gabinete. Com o
-gabinete a ~1.8 de profundidade, raio 12 dá folga.
-
-### Constantes do robô, já em produção
-
-```js
-Y_PESCOCO = 0.19   X_OMBRO = 0.42    // planos de corte, espaço do modelo
-ALTURA = 1.30      FLUTUA = 0.55     // altura final e altura a que paira
-SATURA = 1.15      CLARO_MIN = 0.46  CLARO_MAX = 0.60   // corCasca()
-CREME = 0xF2E8CF   VISEIRA = 0x041D49
-```
-
-`corCasca(hex)` põe o tom do agente em HSL, satura e limita a claridade à
-banda. **Não achates a claridade num valor único** — já tentei, e o
-esmeralda do Designer saía menta e deixava de combinar com o ponto da cor
-dele no painel.
-
----
-
-## O que o código já existente controla e NÃO se pode perder
-
-O `buildDesk()` devolve um objeto cujos campos são lidos pela animação e
-pelo `setStatus()`. Se substituíres mobília, mantém estas referências:
-
-| Referência | Quem a usa | Para quê |
+| | `9eb9b72` como estava | agora |
 |---|---|---|
-| `d.screen` | `setStatus` | `material.emissive` + `emissiveIntensity` por estado |
-| `anim.screenTex` | `tick` | `offset.y` desce → código a correr no ecrã |
-| `d.lamp`, `d.lampLight` | `setStatus` | cor, emissivo e intensidade por estado |
-| `anim.cadeira` | `tick` | `rotation.y` oscila |
-| `anim.steam` | `tick` | 3 esferas que sobem e desvanecem |
-| `anim.folhas` | `tick` | 5 folhas que balançam |
-| `anim.cabeca`, `anim.bracos`, `anim.olhos` | `tick` | pose do robô |
-| `anim.bolbo` | `setStatus` | aponta para um OLHO, não para a orelha |
-| `anim.anel` | `tick` | opacidade do anel de flutuação |
-| `anim.ancora` | `posicionarPins` | âncora da etiqueta HTML, y = 2.05 |
-| `d.lugar`, `d.slot` | `tick` | destino a trabalhar / a brincar |
+| fps (SwiftShader) | **5.7** | **30** (com teto) |
+| draw calls por desenho | 636 (duas passagens) | 224 |
+| triângulos por desenho | ~125 000 | 57 504 |
+| luzes | 8 | 3 |
+| erros na consola | 1 | 0 |
 
-**`anim.bolbo` aponta para um olho.** Estava nas orelhas, mas quando a
-casca passou a ter a cor do agente a cheio os discos das orelhas
-desapareciam nela — e o `setStatus()` apaga-os para cinzento quando livre,
-logo só se veriam com o agente PARADO. As orelhas passaram a marfim fixo e
-o sinal de estado ficou nos olhos, sobre a viseira escura, onde tanto a cor
-acesa como o cinzento se leem.
+Com o teto de 30 desligado a cena oferece ~45 fps por software, ou seja
+sobra margem. Numa máquina com GPU o teto é que manda.
 
----
-
-## Como verificar sem browser à mão
-
-Foi assim que apanhei todos os defeitos. Vale a pena repetir.
-
-**Servidor local sem autenticação** (só no processo de teste; o carregador
-de `.env` só define variáveis ainda indefinidas, por isso uma vazia ganha):
+### Como medir — faz isto antes de entregar
 
 ```bash
-cd orchestrator
-OFFICE_PASSWORD= PORT=3111 node server.js &
-```
+# 1. servidor local sem autenticação (o carregador do .env só define
+#    variáveis ainda indefinidas, por isso uma vazia ganha)
+cd orchestrator && OFFICE_PASSWORD= PORT=3111 node server.js &
 
-**Chrome headless com WebGL por software**, e CDP por `ws` (que está em
-`orchestrator/node_modules`, por isso o script tem de correr dessa pasta):
-
-```bash
+# 2. Chrome headless com WebGL por software — o pior caso real
 "/c/Program Files/Google/Chrome/Application/chrome.exe" \
   --headless=new --disable-gpu --enable-unsafe-swiftshader \
   --remote-debugging-port=9333 --window-size=1600,1000 \
   --user-data-dir=/tmp/cprof about:blank &
+
+# 3. medir (corre de orchestrator/, precisa do `ws`)
+cd orchestrator && node tools/medir-cena.js http://127.0.0.1:3111/office.html 22 /tmp/cena.png
 ```
 
-Depois um script em `orchestrator/` que liga a `127.0.0.1:9333/json/list`,
-faz `Page.navigate`, espera ~13 s pelo carregamento dos GLB, e usa
-`Page.captureScreenshot` com `clip:{x,y,width,height,scale}` para ampliar.
-`Runtime.exceptionThrown` e `Log.entryAdded` apanham erros.
+O `medir-cena.js` não toca na página: patcha `drawElements`,
+`drawArrays`, `linkProgram` e `clear` no protótipo do contexto WebGL
+**antes** de o documento carregar. Mede a cena tal como é entregue.
 
-**Gancho de depuração temporário** — mete antes do `init()`, e APAGA-O
-antes de entregar (verifica com `grep -c __dbg office.html`):
+Devolve dois ritmos e só um conta. `fps_oferecidos` são chamadas de
+`requestAnimationFrame`, o ritmo que o browser dá; `fps_desenhados` são
+renders mesmo feitos, contados pelo `gl.clear`, que o three chama uma
+vez por `render()`. **É o segundo que conta**, e as médias de draw calls
+dividem por ele. Cuidado ao comparar com a versão antiga: com o mapa de
+sombras ligado havia DUAS passagens, logo dois `clear` por frame, e os
+`fps_desenhados` dela valiam metade.
+
+O quinto argumento é JS a correr antes da captura — é como se põem
+agentes em estados diferentes ou se muda o tema. Precisa de um gancho
+`window.__dbg`, que **não** está no ficheiro de propósito. Mete-o
+temporariamente antes do `init()` e apaga-o antes de entregar
+(confirma com `grep -c __dbg office.html`):
 
 ```js
-window.__dbg = { THREE, camera, controls, scene, desks, setStatus,
-                 get PECAS(){ return PECAS; } };
+window.__dbg = { THREE, scene, camera, controls, desks, setStatus, renderer };
 ```
 
-Para fixar a câmara num robô: põe `controls.enableDamping = false` **antes**
-de mexer na posição. Com o damping ligado o `controls.update()` do loop
-volta a puxar a câmara e a captura sai no sítio errado — perdi uma captura
-a descobrir isto.
+A variável de ambiente `AMPLIA="x,y,largura,altura,escala"` recorta e
+amplia um pedaço da captura. **Usa-a sempre que mexeres nos contornos**:
+uma linha de um píxel só se julga a 3×.
 
-**Renderizador offline sem browser.** Para ver um GLB antes de o integrar
-escrevi um rasterizador em Node (projeção ortográfica, z-buffer, sombreado
-plano por normal, PNG escrito à mão com zlib). Foi o que revelou que o
-primeiro robô tinha pernas. Se precisares, reescreve-o: são ~60 linhas e
-poupa muito tempo de adivinhação.
+Duas armadilhas ao capturar:
+
+- Põe `controls.enableDamping = false` **antes** de mexer na câmara. Com
+  o damping ligado, o `controls.update()` do laço volta a puxá-la e a
+  captura sai no sítio errado.
+- Pôr um agente a `working` manda-o **atravessar a sala**, o que demora
+  perto de 3 s. O `medir-cena.js` já espera 6 s depois do script.
 
 ---
 
-## Créditos Meshy
+## O que saiu, por ordem de peso
 
-Saldo a 2026-07-26: **1239**.
+Nada disto se vê. Foi tudo escolhido por medição, não por palpite.
 
-Gasto até agora: 74 no robô (35 dos quais desperdiçados num modelo com
-pernas, por eu ter saltado a rota imagem) + 87 nos módulos do escritório.
+### 1. O mapa de sombras (2048², PCFSoft)
 
-**Usa sempre a rota imagem**: `meshy_text_to_image` (9 cr, nano-banana-pro)
-→ o utilizador aprova o desenho → `meshy_multi_image_to_3d` (30 cr) com as
-três vistas recortadas. Foi por saltar este passo que se perderam 35 cr.
+Um mapa de sombras **desenha a cena inteira outra vez**. Era metade do
+trabalho por frame, sozinho.
 
-Parâmetros que funcionaram: `ai_model: "meshy-6"`, `topology: "triangle"`,
-`target_polycount: 7300` (pede 7300 para aterrar abaixo de 8000 — pedir
-8000 deu 8301), `should_remesh: true`, `remove_lighting: true`, e um
-`texture_prompt` a insistir em cores lisas mate sem riscos.
+No lugar dele há manchas suaves: um degradê radial de 64×64 num plano
+(`SOMBRA_TEX`, `sombra()`), partilhado por toda a cena. A esta distância
+de câmara dão o mesmo assentamento.
 
-Os URLs de download do Meshy **expiram**. É por isso que os GLB vão
-versionados em git, ao contrário do three.js em `vendor/`.
+**O que se perdeu**, e é a única diferença que se nota comparando as
+capturas a 3×: as sombras já não têm direcção. Antes caíam para o lado
+oposto à luz principal e tinham a forma da peça; agora são elipses
+centradas por baixo dela. Se algum dia quiseres a direcção de volta, a
+mancha da secretária é filha de um grupo rodado de `angle + π`, por isso
+o desvio tem de ser rodado ao contrário antes de aplicado.
+
+### 2. Cinco PointLight de candeeiro
+
+Cada luz é avaliada em **todos** os fragmentos da cena, não só nos que
+estão perto dela. Eram cinco só para dizer "este agente está a
+trabalhar", e o bolbo emissivo do candeeiro já dava esse sinal sozinho.
+Saiu também o PointLight azul do holograma, cujo núcleo já é emissivo.
+De oito luzes para três.
+
+### 3. O antialias
+
+**Custa 27.6 → 15.4 fps**, medido. Em software é dos itens mais caros
+que há. Ficou desligado — mas isso partiu os contornos, ver abaixo.
+
+### 4. Uma malha por objecto
+
+Havia 520. As funções `fundir()` e `contornos()` juntam peças estáticas
+que partilham material numa geometria só: 33 teclas passam a uma malha,
+as cinco folhas da planta a outra, as cinco pernas e as cinco rodas da
+cadeira a mais duas, e **todos os contornos de um posto** a uma última.
+Os post-its levam a cor num atributo `color` e o material lê-a com
+`vertexColors` — é o que permite juntar três cores numa malha só.
+
+Só serve para o que não se mexe. O que roda ou se anima — cabeça,
+braços, cadeira, vapor, cauda do gato — fica solto.
+
+### 5. `MeshPhysicalMaterial` nos robôs
+
+O Physical com `clearcoat` é o shader mais caro do three: dois lóbulos
+especulares por luz e por fragmento. O `MeshPhongMaterial` dá o mesmo
+brilho lustroso de brinquedo por uma fracção do preço.
+
+**Atenção ao `specular`.** À primeira tentativa pus `0x8FA0B8` com
+`shininess: 70` e o robô ficou com um brilho queimado que lhe apagava os
+olhos. Os valores que passam no confronto com o original são
+`shininess: 45, specular: 0x39424F` na casca e `80 / 0x4A5566` no
+escuro.
+
+### 6. Coisas pequenas
+
+`roundedBox` memoizado (os cinco postos pedem as MESMAS doze caixas, e o
+ExtrudeGeometry é caro de construir: 60 chamadas passam a 12); `seg` de
+2 para 1 nos cantos; segmentos das esferas e cilindros a metade; chão e
+tapete de `MeshStandardMaterial` para `MeshLambertMaterial`, que num
+plano liso dá exactamente o mesmo e é o material iluminado mais barato.
+
+---
+
+## Sem antialias, os contornos tracejam — e como se resolve
+
+É a armadilha desta cena. O contorno é uma casca invertida: a mesma
+geometria à escala `k`, com `side: BackSide`. A banda visível tem
+`tamanho × (k−1) / 2` unidades de largura.
+
+À distância da câmara por omissão, 1 unidade do mundo dá cerca de 59
+píxeis. A parede do cubículo tem 3.4 e estava a `k = 1.012` → banda de
+0.020 unidades → **1.2 px**. Com antialias isso lê-se como uma linha
+fina e elegante. Sem antialias, qualquer coisa abaixo de um píxel sai
+**tracejada**, e foi exactamente o que aconteceu.
+
+Os valores actuais põem as peças planas grandes acima dos dois píxeis:
+
+| peça | antes | agora |
+|---|---|---|
+| parede | 1.012 | 1.018 |
+| lateral | 1.012 | 1.026 |
+| tampo | 1.015 | 1.023 |
+| moldura do monitor | 1.03 | 1.045 |
+| assento e costas da cadeira | 1.03 | 1.042 |
+| sofá (assento, encosto) | 1.02 | 1.028 |
+| sofá (braços) | 1.03 | 1.042 |
+
+As peças pequenas e redondas — caneca, vaso, robô, gato, bola — **ficam
+como estavam**. Nelas a linha também é fina, mas numa curva pequena o
+tracejado não se lê, e engrossá-las proporcionalmente dava contornos
+gordos e feios. Cheguei a duplicar tudo (`k−1` × 2) e ao perto o
+escritório parecia desenhado a marcador; 1.5× é o ponto certo.
+
+**Se mexeres nas medidas de uma peça com contorno, refaz esta conta.**
+
+---
+
+## O teto de fps e o modo leve
+
+Desenha-se a 30 fps e não aos 60 que o browser oferece: os bonecos
+baloiçam devagar e ninguém vê a diferença, mas o custo é metade. Com o
+separador escondido não se desenha nada.
+
+**O limiar é 29 ms, não 33.3 (=1000/30).** O `requestAnimationFrame`
+chega de 16.7 em 16.7 ms com jitter, e ao pedir exactamente 33.3 há
+pares de frames que dão 33.2 e são recusados — o desenho seguinte só vem
+ao terceiro e o ritmo real mede **18.7 fps**. A folga tem de caber num
+frame inteiro; qualquer valor entre 17 e 33 dá 30 certos.
+
+Duas animações contavam frames e não segundos, e tiveram de duplicar de
+passo para andarem à mesma velocidade a 30 fps: o `screenTex.offset.y` do
+código no ecrã, e o limite do `dt` (de .05 para .12, senão o robô
+andaria devagar no modo leve, que corre a 20).
+
+Se os primeiros 4 s não chegarem a 24 fps, a cena cai para **modo
+leve**: resolução a 70%, 20 fps, grelha e vapor fora. Testa-o
+estrangulando a CPU pelo CDP (`Emulation.setCPUThrottlingRate`,
+`rate: 20`) e confirmando que `canvas.width / canvas.clientWidth` dá
+0.70.
+
+A bandeira `vigiaFeito` não é acessória: sem ela, uma máquina rápida
+passava no teste, o relógio continuava a andar, a condição do tempo
+voltava a dar verdadeira no frame seguinte com o contador zerado, e
+despromovia justamente quem não precisava.
+
+Não se usa `WEBGL_debug_renderer_info` para detectar software: o Chrome
+esconde-a em muitas configurações. O vigia mede o que interessa.
+
+---
+
+## O que o código controla e não se pode perder
+
+O `buildDesk()` devolve um objeto cujos campos são lidos pelo `tick()` e
+pelo `setStatus()`. Se mexeres na mobília, mantém estas referências:
+
+| Referência | Quem a usa | Para quê |
+|---|---|---|
+| `d.screen` | `setStatus` | `material.emissive` + `emissiveIntensity` |
+| `d.lamp` | `setStatus` | cor e emissivo do bolbo por estado |
+| `anim.screenTex` | `tick` | `offset.y` desce → código a correr |
+| `anim.cadeira` | `tick` | `rotation.y` oscila |
+| `anim.cabeca`, `anim.bracos` | `tick` | pose do robô |
+| `anim.olhos` | `tick` | `scale.y` → piscar |
+| `anim.bolbo` | `setStatus` | aponta para a ANTENA do robô |
+| `anim.anel` | `tick` | opacidade do anel de flutuação |
+| `anim.sombra` | `tick` | desconta o salto para ficar no chão |
+| `anim.steam`, `anim.folhas` | `tick` | vapor do café, planta a baloiçar |
+| `anim.ancora` | `posicionarPins` | âncora da etiqueta HTML, y = 2.05 |
+| `d.lugar`, `d.slot` | `tick` | destino a trabalhar / a brincar |
+| `userData.agentId` | raycast | clicar num posto abre a ficha |
+
+**`anim.folhas` mudou de significado.** Era um array de cinco folhas que
+baloiçavam cada uma por si; agora é uma malha só com a planta inteira, e
+baloiça toda ao mesmo tempo. Para o baloiço rodar no sítio certo, as
+folhas nascem à volta da ORIGEM e é a malha que vai para cima do vaso —
+fundidas nas coordenadas antigas, rodavam à volta do centro do posto e a
+planta varria a secretária.
+
+---
+
+## Medidas da cena
+
+```
+R = 7.4                 raio do arco de secretárias
+spread = π · 0.86       abertura 154.8°, 5 postos
+ângulos = -77.4, -38.7, 0, 38.7, 77.4 graus
+
+posto i:  g.position = (sin θ · 7.4, 0, cos θ · 7.4)
+          g.rotation.y = θ + π       → o local +z olha o centro da sala
+robô a trabalhar: raio 7.4 − 1.12 = 6.28, mesmo ângulo
+lounge: z = −7.2 (lado oposto do arco)
+
+chão: círculo raio 24   tapete central: raio 5.2   grelha 48 × 48
+nevoeiro: 34 a 70
+câmara: perspetiva 42°, em (−2, 13, 19.5), alvo (0, 1.3, −0.6)
+OrbitControls: azimute LIVRE (360°), maxPolarAngle π/2.2, distância 7 a 34
+```
+
+O robô vive na **cena** e não no grupo do posto: tem de atravessar a
+sala até ao lounge, e um filho de um grupo rodado não anda em linha
+recta pelo mundo. O posto limita-se a dizer-lhe qual é o seu lugar.
+
+---
+
+## Coisas que já custaram tempo
+
+### `pintarCena` não sabe do CSS
+
+`pintarCena(tema)` no fim do ficheiro repinta fundo, nevoeiro, chão e
+tapete — são do WebGL, não do CSS. **Se acrescentares um objecto grande,
+tem de entrar lá.** O Chrome headless pede tema escuro por omissão, o
+que explica capturas escuras sem se ter pedido nada.
+
+Nota: a grelha fica clara no tema escuro. É assim desde sempre e lê-se
+bem, por isso ficou. Se alguma vez a quiseres pintar, atenção: o
+`GridHelper` cozinha as cores no atributo `color` da geometria e liga
+`vertexColors`, por isso `material.color` não pinta — **multiplica**.
+Com as linhas claras que ele tem, pôr-lhe uma cor escura faz a grelha
+desaparecer.
+
+### O `mergeGeometries` recusa misturar indexação
+
+O `roundedBox()` sai do ExtrudeGeometry, que vem **sem** índice; as
+esferas e cilindros vêm **com** ele. Misturados, o merge devolvia `null`
+e a peça desaparecia da cena sem erro nenhum. O `juntarGeos()` normaliza
+antes de juntar — não lhe tires isso.
+
+### Ao fundir contornos, a escala tem de ser achatada primeiro
+
+O contorno é a geometria à escala `k`. Ao fundir vários, a escala tem de
+entrar na geometria de cada um **antes** da junção, senão perde-se e os
+contornos colapsam para dentro das peças. É o que o `contornos()` faz.
+
+### Os clones de textura partilham a imagem na GPU
+
+Os cinco ecrãs recebem um `SCREEN_TEX.clone()` para deslizarem a ritmos
+diferentes, mas o three indexa os envios pela `texture.source` e o
+`offset` é um uniforme. Sai barato — não tentes partilhar a textura
+para "optimizar", não ganhas nada e perdes o ritmo por agente.
+
+---
+
+## Os GLB do Meshy, que já não são usados
+
+`orchestrator/public/modelos/` tem 6.8 MB em três ficheiros —
+`robo.glb`, `gabinete.glb`, `lounge.glb` — que **nada carrega**. Ficam
+versionados porque os URLs de download do Meshy expiram e regerá-los
+custa créditos.
+
+Saldo Meshy a 2026-07-26: **1239**. Gasto: 74 no robô (35 dos quais
+desperdiçados num modelo com pernas, por se ter saltado a rota imagem)
++ 87 nos módulos do escritório.
+
+Se algum dia voltares a gerar modelos:
+
+- **Usa sempre a rota imagem**: `meshy_text_to_image` (9 cr,
+  nano-banana-pro) → o utilizador aprova o desenho →
+  `meshy_multi_image_to_3d` (30 cr) com as três vistas recortadas. Foi
+  por saltar este passo que se perderam 35 cr.
+- Parâmetros que funcionaram: `ai_model: "meshy-6"`, `topology:
+  "triangle"`, `target_polycount: 7300` (pede 7300 para aterrar abaixo
+  de 8000 — pedir 8000 deu 8301), `should_remesh: true`,
+  `remove_lighting: true`, e um `texture_prompt` a insistir em cores
+  lisas mate sem riscos.
+- O gerador escreve rótulos "FRONT/SIDE/BACK" na imagem apesar de se
+  pedir sem texto. O recorte tem de agrupar as linhas contíguas de
+  conteúdo e ficar só com a maior, senão as letras entram no recorte.
+
+E o aviso que interessa mais: **7 300 triângulos por módulo, vezes dez
+módulos, não cabem numa cena que tem de correr sem GPU** — e mesmo
+que coubessem, o utilizador achou o resultado pior do que o cartoon
+procedural que já cá estava. Um modelo do Meshy serve para uma peça em
+destaque, não para mobília repetida cinco vezes.
 
 ---
 
 ## Publicar
 
-A VPS não se atualiza por `git push`. É `scp` dos ficheiros e pronto —
-**não precisa de `pm2 restart`** porque são estáticos e o `express.static`
-lê do disco a cada pedido. A nota do `HANDOFF.md` sobre o restart vale para
-código do servidor, não para isto.
+A VPS não se atualiza por `git push`. É `scp` do ficheiro e pronto —
+**não precisa de `pm2 restart`** porque é estático e o `express.static`
+lê do disco a cada pedido. A nota do `HANDOFF.md` sobre o restart vale
+para código do servidor, não para isto.
 
 ```bash
-ssh root@169.58.37.101 "mkdir -p /root/ai-office/orchestrator/public/modelos"
 scp orchestrator/public/office.html root@169.58.37.101:/root/ai-office/orchestrator/public/
-scp orchestrator/public/modelos/*.glb root@169.58.37.101:/root/ai-office/orchestrator/public/modelos/
 ```
 
-Ligação por chave `id_ed25519`, sem password. Verifica sempre com `md5sum`
-nos dois lados e com um `curl` autenticado de dentro da VPS (as credenciais
-leem-se do `.env` para variáveis, **sem as imprimir**).
+Ligação por chave `id_ed25519`, sem password. Verifica sempre com
+`md5sum` nos dois lados e com um `curl` autenticado de dentro da VPS (as
+credenciais leem-se do `.env` para variáveis, **sem as imprimir**).
 
-Cópias de reversão que já estão lá:
-`office.html.antes-robo-glb` (robô procedural) e `office.html.pastel`
-(GLB com as cores pastel, antes das vivas).
+Cópias de reversão que já estão na VPS:
 
----
-
-## Correção pendente ao HANDOFF.md
-
-O `HANDOFF.md` diz que o `office3d.js` é a *"cena 3D (só usada pelo
-office.html)"*. **É falso e induziu-me em erro.** Nada importa o
-`office3d.js` — é código morto, e a cena do `office.html` é inline com
-importmap para o unpkg. Falta também listar a pasta `modelos/`.
-O utilizador foi avisado e ainda não respondeu se quer a correção feita.
+| ficheiro | o que é |
+|---|---|
+| `office.html.glb-meshy` | cápsulas e robôs em GLB do Meshy |
+| `office.html.antes-gabinetes` | robô em GLB, secretárias procedurais |
+| `office.html.pastel` | GLB com as cores pastel |
+| `office.html.antes-robo-glb` | o cartoon do `9eb9b72`, antes de acelerado |

@@ -20,6 +20,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.*
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -108,7 +109,10 @@ class MainActivity : AppCompatActivity() {
         arrancar()
     }
 
+    private var vozAtiva: Voz? = null
+
     override fun onDestroy() {
+        vozAtiva?.destruir()
         speech?.destroy()
         speech = null
         super.onDestroy()
@@ -169,17 +173,42 @@ class MainActivity : AppCompatActivity() {
 
     /* ──────────────────────────── painel web ─────────────────────────── */
 
+    /**
+     * Ponto de viragem: daqui para a frente é tudo Compose nativo.
+     * O WebView continua a existir, mas só dentro do separador do Vault.
+     */
     private fun carregarPainel(token: String) {
-        // O token entra como COOKIE e não como cabeçalho: o WebView não
-        // deixa pôr cabeçalhos em todos os pedidos, mas o cookie viaja em
-        // tudo — incluindo no handshake do WebSocket, que é o que mantém
-        // o painel vivo. Tem de ser ANTES do loadUrl.
+        // O cookie continua a ser aplicado: é o que o WebView do Vault e o
+        // WebSocket usam para se autenticarem sem verem a password.
         Sessao.aplicarCookie(baseUrl, token)
 
-        boot.progresso = 0.95f
-        boot.estado = "a carregar painel"
-        jaCarregou = false
-        web.loadUrl(baseUrl)
+        val cliente = Cliente(baseUrl, token)
+        val voz = Voz(this)
+        this.vozAtiva = voz
+
+        garantirMicrofone()
+
+        setContent {
+            DaisyApp(
+                cliente = cliente,
+                baseUrl = baseUrl,
+                token = token,
+                voz = voz,
+                aoAbrirDefinicoes = { mostrarCredenciais(null) },
+            )
+        }
+    }
+
+    private fun garantirMicrofone() {
+        val concedido = androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!concedido) {
+            androidx.core.app.ActivityCompat.requestPermissions(
+                this, arrayOf(android.Manifest.permission.RECORD_AUDIO), 1
+            )
+        }
     }
 
     private fun clienteWeb() = object : WebViewClient() {

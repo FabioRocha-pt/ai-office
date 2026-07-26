@@ -14,6 +14,7 @@ const { runAgent } = require("./agents/runner");
 const { runPipeline, reviseProject, isRunning, forceReset, current } = require("./agents/pipeline");
 const vault = require("./agents/vault");
 const stacks = require("./agents/stacks");
+const github = require("./agents/github");
 const { espacoLivreMB, MIN_DISCO_MB } = require("./agents/build");
 const assignments = require("./agents/assignments");
 const models = require("./agents/models");
@@ -362,6 +363,50 @@ app.get("/projects", (req, res) => {
   }
 });
 
+
+// Detalhe de uma plataforma: metadados, etapas e os relatórios que os
+// agentes escreveram. Os relatórios não são guardados em base de dados —
+// são os próprios ficheiros markdown que eles deixam na pasta, que é
+// onde vive a verdade.
+app.get("/projects/:id", (req, res) => {
+  const meta = vault.readMeta(req.params.id);
+  if (!meta) return res.status(404).json({ error: "Projeto não existe." });
+
+  const fs = require("fs");
+  const path = require("path");
+  const dir = vault.projectPath(req.params.id);
+
+  const FICHEIROS = [
+    ["PLANO.md", "CEO", "Plano de trabalho"],
+    ["ARQUITETURA.md", "CTO", "Arquitetura e stack"],
+    ["DESIGN.md", "Designer", "Design"],
+    ["QA.md", "QA Tester", "Relatório de testes"],
+    ["NOTAS.md", "Equipa", "Notas e passagens"],
+  ];
+
+  const relatorios = [];
+  for (const [nome, autor, titulo] of FICHEIROS) {
+    const caminho = path.join(dir, nome);
+    if (!fs.existsSync(caminho)) continue;
+    try {
+      const texto = fs.readFileSync(caminho, "utf8");
+      relatorios.push({
+        ficheiro: nome, autor, titulo,
+        // 12 KB chega para ler no telemóvel; o resto vê-se no vault web
+        texto: texto.length > 12000 ? texto.slice(0, 12000) + "\n\n[...cortado]" : texto,
+      });
+    } catch {}
+  }
+
+  res.json({
+    ...meta,
+    entry: vault.detectEntry(dir),
+    files: vault.scanFiles(dir),
+    git: vault.gitStats(dir),
+    relatorios,
+  });
+});
+
 app.post("/projects/:id/launch", (req, res) => {
   try {
     res.json(preview.launch(req.params.id));
@@ -372,6 +417,18 @@ app.post("/projects/:id/launch", (req, res) => {
 
 app.post("/projects/:id/stop", (req, res) => {
   res.json({ stopped: preview.stop(req.params.id) });
+});
+
+// Publicar a plataforma no GitHub. Privada por omissão: são geradas por
+// IA e convém veres antes de as tornares públicas.
+app.post("/projects/:id/publicar", async (req, res) => {
+  try {
+    const privado = req.body?.privado !== false;
+    const info = await github.publicar(req.params.id, privado);
+    res.json(info);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.delete("/projects/:id", (req, res) => {
@@ -441,8 +498,37 @@ app.get("/stats", (req, res) => {
 
     timeline.sort((a, b) => a.at - b.at);
 
+    // ---- Consciência de gasto ----
+    // As CLIs de subscrição não reportam tokens, por isso o melhor
+    // indicador que temos é tempo de execução por CLI. Diz-te onde está
+    // a ir a quota, mesmo sem número exato.
+    const porCli = {};
+    const porDia = {};
+    for (const p of projects) {
+      for (const e of p.stages || []) {
+        if (!e.startedAt || !e.finishedAt) continue;
+        const seg = Math.max(0, Math.round((e.finishedAt - e.startedAt) / 1000));
+        const cli = e.cli || "?";
+
+        porCli[cli] = porCli[cli] || { segundos: 0, etapas: 0 };
+        porCli[cli].segundos += seg;
+        porCli[cli].etapas += 1;
+
+        const dia = new Date(e.startedAt).toISOString().slice(0, 10);
+        porDia[dia] = (porDia[dia] || 0) + seg;
+      }
+    }
+
+    // últimos 14 dias, para o gráfico não crescer sem fim
+    const dias = Object.keys(porDia).sort().slice(-14);
+    const gasto = {
+      porCli,
+      porDia: dias.map((d) => ({ dia: d, segundos: porDia[d] })),
+      totalSegundos: Object.values(porCli).reduce((a, c) => a + c.segundos, 0),
+    };
+
     res.json({
-      totals, byExt, byAgent, avgDuration,
+      totals, byExt, byAgent, avgDuration, gasto,
       timeline: timeline.slice(-200),
       projects: projects.map((p) => ({
         id: p.id, name: p.name, status: p.status, createdAt: p.createdAt,

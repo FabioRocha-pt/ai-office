@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Escritório — AI Office</title>
+<script src="/tema.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -218,6 +219,58 @@
     .brief-bar{right:0}
     .console{width:calc(100vw - 36px)}
   }
+
+  /* ---- tema escuro ---- */
+  html[data-tema="escuro"]{
+    --bg:#0D1016;
+    --panel:#151A21;
+    --ink:#E5EAF2;
+    --ink-2:#9BA7B8;
+    --ink-3:#68748A;
+    --line:#242B36;
+  }
+  html[data-tema="escuro"] body{background:var(--bg)}
+  html[data-tema="escuro"] .top{background:rgba(21,26,33,.85)}
+  html[data-tema="escuro"] .nav a{background:var(--panel);border-color:var(--line);color:var(--ink-2)}
+  html[data-tema="escuro"] .nav a:hover{background:#1C222B;color:var(--ink)}
+  html[data-tema="escuro"] .nav a.on{background:var(--ink);color:#0D1016;border-color:var(--ink)}
+  html[data-tema="escuro"] .btn{background:var(--panel);border-color:var(--line);color:var(--ink)}
+  html[data-tema="escuro"] .btn:hover{background:#1C222B}
+  html[data-tema="escuro"] .btn.primary{background:var(--ink);color:#0D1016;border-color:var(--ink)}
+  html[data-tema="escuro"] .btn.primary:hover{background:#fff}
+  html[data-tema="escuro"] .btn.danger{background:#1F1315;border-color:#4A2328;color:#F87171}
+  html[data-tema="escuro"] .card,
+  html[data-tema="escuro"] .kpi,
+  html[data-tema="escuro"] .empty{background:var(--panel);border-color:var(--line)}
+  html[data-tema="escuro"] textarea,
+  html[data-tema="escuro"] input{background:#0F131A;border-color:var(--line);color:var(--ink)}
+  html[data-tema="escuro"] .row .track,
+  html[data-tema="escuro"] .stage{background:#1B222C}
+  html[data-tema="escuro"] .tag.done{background:#123024;color:#4ADE80}
+  html[data-tema="escuro"] .tag.building{background:#33260B;color:#FBBF24}
+  html[data-tema="escuro"] .tag.failed{background:#331416;color:#F87171}
+  html[data-tema="escuro"] .tag.unknown{background:#1C222B;color:var(--ink-2)}
+  html[data-tema="escuro"] .fix .who button{background:var(--panel);border-color:var(--line);color:var(--ink-2)}
+  html[data-tema="escuro"] .fix .who button.on{background:var(--ink);color:#0D1016;border-color:var(--ink)}
+  html[data-tema="escuro"] .fix .go,
+  html[data-tema="escuro"] .brief-bar button{background:var(--ink);color:#0D1016}
+  html[data-tema="escuro"] .axis{stroke:var(--line)}
+  html[data-tema="escuro"] .glabel{fill:var(--ink-3)}
+  html[data-tema="escuro"] .dash{background:var(--panel);border-color:var(--line)}
+  html[data-tema="escuro"] .agent-row:hover,
+  html[data-tema="escuro"] .act:hover{background:#1C222B}
+  html[data-tema="escuro"] .act{background:var(--panel);border-color:var(--line);color:var(--ink)}
+  html[data-tema="escuro"] .pill{background:#1C222B;border-color:var(--line);color:var(--ink-2)}
+
+  /* botão do tema */
+  #tema-btn{
+    font-size:15px;line-height:1;cursor:pointer;
+    background:#fff;border:1px solid var(--line);color:var(--ink-2);
+    border-radius:8px;padding:6px 11px;font-family:inherit;
+  }
+  #tema-btn:hover{background:#F2F5FA;color:var(--ink)}
+  html[data-tema="escuro"] #tema-btn{background:var(--panel);color:var(--ink-2)}
+  html[data-tema="escuro"] #tema-btn:hover{background:#1C222B;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -231,6 +284,7 @@
     <a href="/graphs.html">Gráficos</a>
     <a href="/">Quadro</a>
     <a href="/flip.html">Telemóvel</a>
+    <button id="tema-btn" type="button">☾</button>
   </nav>
 </div>
 
@@ -1422,6 +1476,21 @@ function tick(){
   controls.update();
   renderer.render(scene, camera);
 }
+
+/* O fundo da cena e o nevoeiro são do WebGL, não do CSS — têm de ser
+   repintados à mão quando o tema muda. */
+function pintarCena(tema){
+  const cor = tema === 'escuro' ? 0x0D1016 : 0xEDF1F7;
+  scene.background = new THREE.Color(cor);
+  scene.fog = new THREE.Fog(cor, 26, 60);
+
+  // No escuro, o chão claro ficava a brilhar como uma lâmpada
+  floor.material.color.setHex(tema === 'escuro' ? 0x161B23 : 0xF9FBFD);
+  rug.material.color.setHex(tema === 'escuro' ? 0x1B212B : 0xE7EDF6);
+}
+
+addEventListener('tema-mudou', e => pintarCena(e.detail));
+pintarCena(document.documentElement.dataset.tema || 'claro');
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth/innerHeight;

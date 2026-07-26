@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos — AI Office</title>
+<script src="/tema.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -30,12 +31,12 @@
   h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
   .sub{color:var(--ink-2);font-size:14px;margin:0 0 24px}
 
-  .kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:18px}
+  .kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));margin-bottom:18px}
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px 16px}
   .kpi .n{font-size:29px;font-weight:700;letter-spacing:-.03em;line-height:1.1;font-variant-numeric:tabular-nums}
   .kpi .l{font-size:12px;color:var(--ink-3);margin-top:3px;font-weight:500}
 
-  .cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr))}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:17px}
   .card h2{font-size:13.5px;font-weight:650;margin:0 0 3px}
   .card p{font-size:12px;color:var(--ink-3);margin:0 0 14px}
@@ -52,10 +53,72 @@
   .axis{stroke:var(--line);stroke-width:1}
   .glabel{font-size:10px;fill:var(--ink-3);font-family:Inter,sans-serif}
 
+  @media (max-width:520px){
+    main{padding:18px 12px 44px}
+    h1{font-size:22px}
+    .top{flex-wrap:wrap;gap:8px}
+    .nav{margin-left:0;width:100%;overflow-x:auto}
+    .kpi .n{font-size:24px}
+    .row .name{width:74px;font-size:12px}
+    .row .val{width:48px}
+  }
+
   .empty{background:var(--panel);border:1px dashed #CBD5E5;border-radius:14px;
     padding:44px 24px;text-align:center;color:var(--ink-2)}
   .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
   .empty a{color:var(--cto);font-weight:600}
+
+  /* ---- tema escuro ---- */
+  html[data-tema="escuro"]{
+    --bg:#0D1016;
+    --panel:#151A21;
+    --ink:#E5EAF2;
+    --ink-2:#9BA7B8;
+    --ink-3:#68748A;
+    --line:#242B36;
+  }
+  html[data-tema="escuro"] body{background:var(--bg)}
+  html[data-tema="escuro"] .top{background:rgba(21,26,33,.85)}
+  html[data-tema="escuro"] .nav a{background:var(--panel);border-color:var(--line);color:var(--ink-2)}
+  html[data-tema="escuro"] .nav a:hover{background:#1C222B;color:var(--ink)}
+  html[data-tema="escuro"] .nav a.on{background:var(--ink);color:#0D1016;border-color:var(--ink)}
+  html[data-tema="escuro"] .btn{background:var(--panel);border-color:var(--line);color:var(--ink)}
+  html[data-tema="escuro"] .btn:hover{background:#1C222B}
+  html[data-tema="escuro"] .btn.primary{background:var(--ink);color:#0D1016;border-color:var(--ink)}
+  html[data-tema="escuro"] .btn.primary:hover{background:#fff}
+  html[data-tema="escuro"] .btn.danger{background:#1F1315;border-color:#4A2328;color:#F87171}
+  html[data-tema="escuro"] .card,
+  html[data-tema="escuro"] .kpi,
+  html[data-tema="escuro"] .empty{background:var(--panel);border-color:var(--line)}
+  html[data-tema="escuro"] textarea,
+  html[data-tema="escuro"] input{background:#0F131A;border-color:var(--line);color:var(--ink)}
+  html[data-tema="escuro"] .row .track,
+  html[data-tema="escuro"] .stage{background:#1B222C}
+  html[data-tema="escuro"] .tag.done{background:#123024;color:#4ADE80}
+  html[data-tema="escuro"] .tag.building{background:#33260B;color:#FBBF24}
+  html[data-tema="escuro"] .tag.failed{background:#331416;color:#F87171}
+  html[data-tema="escuro"] .tag.unknown{background:#1C222B;color:var(--ink-2)}
+  html[data-tema="escuro"] .fix .who button{background:var(--panel);border-color:var(--line);color:var(--ink-2)}
+  html[data-tema="escuro"] .fix .who button.on{background:var(--ink);color:#0D1016;border-color:var(--ink)}
+  html[data-tema="escuro"] .fix .go,
+  html[data-tema="escuro"] .brief-bar button{background:var(--ink);color:#0D1016}
+  html[data-tema="escuro"] .axis{stroke:var(--line)}
+  html[data-tema="escuro"] .glabel{fill:var(--ink-3)}
+  html[data-tema="escuro"] .dash{background:var(--panel);border-color:var(--line)}
+  html[data-tema="escuro"] .agent-row:hover,
+  html[data-tema="escuro"] .act:hover{background:#1C222B}
+  html[data-tema="escuro"] .act{background:var(--panel);border-color:var(--line);color:var(--ink)}
+  html[data-tema="escuro"] .pill{background:#1C222B;border-color:var(--line);color:var(--ink-2)}
+
+  /* botão do tema */
+  #tema-btn{
+    font-size:15px;line-height:1;cursor:pointer;
+    background:#fff;border:1px solid var(--line);color:var(--ink-2);
+    border-radius:8px;padding:6px 11px;font-family:inherit;
+  }
+  #tema-btn:hover{background:#F2F5FA;color:var(--ink)}
+  html[data-tema="escuro"] #tema-btn{background:var(--panel);color:var(--ink-2)}
+  html[data-tema="escuro"] #tema-btn:hover{background:#1C222B;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -67,6 +130,7 @@
     <a href="/vault.html">Vault</a>
     <a href="/graphs.html" class="on">Gráficos</a>
     <a href="/flip.html">Telemóvel</a>
+    <button id="tema-btn" type="button">☾</button>
   </nav>
 </div>
 
@@ -319,6 +383,56 @@ function desenharGrafo(cv, dados){
 
 }
 
+const CLI_COR = { claude:'#D97757', codex:'#10A37F', antigravity:'#4285F4' };
+
+function gastoPorCli(g){
+  if(!g || !Object.keys(g.porCli || {}).length)
+    return '<p style="font-size:13px;color:#93A0B4;margin:0">Ainda sem execuções.</p>';
+
+  const ent = Object.entries(g.porCli).sort((a,b) => b[1].segundos - a[1].segundos);
+  const max = Math.max(...ent.map(e => e[1].segundos)) || 1;
+  const min = s => s >= 3600 ? `${(s/3600).toFixed(1)}h`
+    : s >= 60 ? `${Math.round(s/60)}m` : `${s}s`;
+
+  return ent.map(([cli, d]) => `
+    <div class="row">
+      <span class="name">${esc(cli)}</span>
+      <span class="track"><i class="fill" style="width:${(d.segundos/max*100).toFixed(1)}%;background:${CLI_COR[cli] || '#94A3B8'}"></i></span>
+      <span class="val">${min(d.segundos)}</span>
+    </div>
+    <div style="font-size:10.5px;color:#93A0B4;margin:-4px 0 7px 92px">${d.etapas} etapas</div>
+  `).join('') + `<div style="font-size:12px;color:#5A6579;margin-top:6px">
+      Total: <b style="color:#1B2230">${min(g.totalSegundos)}</b> de agente
+    </div>`;
+}
+
+function gastoPorDia(g){
+  const dias = g?.porDia || [];
+  if(dias.length < 2)
+    return '<p style="font-size:13px;color:#93A0B4;margin:0">Preciso de pelo menos dois dias.</p>';
+
+  const w = 520, h = 130, pad = { l:34, r:8, t:8, b:22 };
+  const max = Math.max(...dias.map(d => d.segundos)) || 1;
+  const larg = (w - pad.l - pad.r) / dias.length;
+
+  const barras = dias.map((d, i) => {
+    const alt = (d.segundos / max) * (h - pad.t - pad.b);
+    const x = pad.l + i * larg + larg * 0.16;
+    const y = h - pad.b - alt;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(larg*0.68).toFixed(1)}"
+      height="${Math.max(1, alt).toFixed(1)}" rx="2" fill="#3B82F6" opacity=".85"/>`;
+  }).join('');
+
+  const dia = t => t.slice(8) + '/' + t.slice(5,7);
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Minutos de agente por dia">
+    <line class="axis" x1="${pad.l}" y1="${h-pad.b}" x2="${w-pad.r}" y2="${h-pad.b}"/>
+    ${barras}
+    <text class="glabel" x="${pad.l}" y="${h-7}">${dia(dias[0].dia)}</text>
+    <text class="glabel" x="${w-pad.r}" y="${h-7}" text-anchor="end">${dia(dias[dias.length-1].dia)}</text>
+    <text class="glabel" x="${pad.l-6}" y="${pad.t+8}" text-anchor="end">${Math.round(max/60)}m</text>
+  </svg>`;
+}
+
 async function load(){
   let s;
   try{
@@ -390,6 +504,18 @@ async function load(){
         <h2>Composição do código</h2>
         <p>Ficheiros por extensão.</p>
         ${donut(extEntries)}
+      </div>
+
+      <div class="card">
+        <h2>Onde está a ir a quota</h2>
+        <p>Tempo de execução por CLI. As subscrições não reportam tokens — isto é o melhor indicador que há.</p>
+        ${gastoPorCli(s.gasto)}
+      </div>
+
+      <div class="card wide">
+        <h2>Consumo por dia</h2>
+        <p>Minutos de agente por dia, nos últimos 14.</p>
+        ${gastoPorDia(s.gasto)}
       </div>
 
       <div class="card">

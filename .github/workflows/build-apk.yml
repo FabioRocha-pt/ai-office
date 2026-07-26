@@ -8,6 +8,10 @@ on:
     paths: ['android/**', '.github/workflows/build-apk.yml']
   workflow_dispatch:
 
+# Necessário para publicar a Release: sem isto o passo falha com 403.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,3 +38,24 @@ jobs:
           name: daisy-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+
+      # Os artefactos do Actions vêm embrulhados num .zip e exigem sessão
+      # do GitHub — no telemóvel é uma dor. Uma Release dá um link direto
+      # para o .apk, que o Chrome do Android descarrega e instala com um
+      # toque. A tag 'latest' é reescrita a cada build, por isso o link
+      # nunca muda.
+      - name: Renomear o APK
+        run: |
+          mkdir -p entrega
+          cp android/app/build/outputs/apk/release/*.apk entrega/daisy.apk
+          ls -la entrega/
+
+      - name: Publicar Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: D.A.I.S.Y. (build mais recente)
+          body: |
+            APK assinado com a chave de debug. Toca no ficheiro para instalar.
+            Build ${{ github.run_number }} — commit ${{ github.sha }}
+          files: entrega/daisy.apk

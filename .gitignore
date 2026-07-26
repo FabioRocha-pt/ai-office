@@ -16,7 +16,7 @@ models.json
 .env
 
 # ---- artefactos de build ----
-orchestrator/public/download/
+orchestrator/public/apk/
 android/.gradle/
 android/build/
 android/app/build/

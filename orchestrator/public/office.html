@@ -579,7 +579,6 @@ const SCREEN_TEX = (() => {
   return t;
 })();
 
-const NOTE_CORES = [0xFDE68A, 0xFBCFE8, 0xBBF7D0, 0xBFDBFE];
 
 const R = 7.4;   // raio do arco de secretárias
 
@@ -651,6 +650,166 @@ function corCasca(hex){
    manchas azuis. O cluster da viseira acaba nos 55, por isso o limite vai
    logo acima dele: assim um risco a meia-luz cai do lado da casca. */
 const LIMIAR  = 64;
+
+/* Os módulos do escritório trazem uma TERCEIRA cor: as calhas de luz, em
+   ciano. Com a regra de duas do robô caíam do lado do creme (têm
+   luminância ~140) e desapareciam — e são elas que carregam a cor do
+   agente. Medido na textura do gabinete: friso #151e2e com 16.5% da área,
+   calha #25bbd2 com 1.0%, casca #f3efe1 com 82.5%.
+
+   O robô passa por aqui sem mudar de aspeto: o azul-marinho dele tem
+   saturação 0.94, mas luminância 29, e o teste do escuro vem primeiro. */
+const SAT_CALHA = 0.45;
+
+/* Sete pontos baricêntricos: centróide, meios das arestas e junto aos
+   vértices. Serve os dois critérios de baixo. */
+const AMOSTRAS = [
+  [1/3, 1/3, 1/3], [.5, .5, 0], [0, .5, .5], [.5, 0, .5],
+  [.6, .2, .2], [.2, .6, .2], [.2, .2, .6],
+];
+
+/** Lê a textura para um amostrador de luminância e saturação por UV. */
+function amostrador(img){
+  const cv = document.createElement('canvas');
+  cv.width = img.width; cv.height = img.height;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(img, 0, 0);
+  const px = cx.getImageData(0, 0, cv.width, cv.height).data;
+  // As UV do glTF têm o V a crescer para baixo e o loader marca
+  // flipY=false, por isso a linha do canvas é v*(altura-1), sem inverter.
+  return (u, v) => {
+    const x = Math.min(cv.width  - 1, Math.max(0, Math.round(u * (cv.width  - 1))));
+    const y = Math.min(cv.height - 1, Math.max(0, Math.round(v * (cv.height - 1))));
+    const i = (y * cv.width + x) * 4;
+    const r = px[i], g = px[i+1], b = px[i+2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    return { l: r * .299 + g * .587 + b * .114, s: mx ? (mx - mn) / mx : 0 };
+  };
+}
+
+/**
+ * Classe de cor de um triângulo: 'escuro', 'calha' ou 'casca'.
+ *
+ * Mediana para a luminância, MÁXIMO para a saturação, e não é incoerência.
+ * O friso escuro é área grande e a mediana acerta-lhe. As calhas são linhas
+ * finas: medi-as e com a mediana só 161 dos 6808 triângulos do gabinete
+ * saíam como calha, contra 425 com o máximo. À distância desta câmara uma
+ * calha de um triângulo de largura fica sub-pixel, por isso vale enviesar
+ * a favor de a mostrar.
+ */
+function classeCor(luz, uv, t){
+  if (!luz || !uv) return 'casca';
+  const p = AMOSTRAS.map(([a, b, c]) => luz(
+    a * uv.getX(t) + b * uv.getX(t+1) + c * uv.getX(t+2),
+    a * uv.getY(t) + b * uv.getY(t+1) + c * uv.getY(t+2),
+  ));
+  const lum = p.map(o => o.l).sort((x, y) => x - y);
+  if (lum[3] < LIMIAR) return 'escuro';
+  if (Math.max(...p.map(o => o.s)) > SAT_CALHA) return 'calha';
+  return 'casca';
+}
+
+/** Extrai um subconjunto de triângulos de `geo` para uma geometria nova. */
+function recortarTris(geo, tris, aplicar){
+  const g = new THREE.BufferGeometry();
+  for (const attr of ['position', 'normal']) {
+    const src = geo.attributes[attr];
+    if (!src) continue;
+    const it = src.itemSize;
+    const dst = new Float32Array(tris.length * 3 * it);
+    tris.forEach((t, i) => {
+      for (let v = 0; v < 3; v++)
+        for (let k = 0; k < it; k++)
+          dst[(i*3 + v)*it + k] = src.array[(t + v)*it + k];
+    });
+    g.setAttribute(attr, new THREE.BufferAttribute(dst, it));
+  }
+  if (aplicar) aplicar(g);
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
+
+/** Primeira malha de um GLB, já sem índices, com a textura amostrada. */
+async function carregarMalha(url){
+  const gltf = await new GLTFLoader().loadAsync(url);
+  let fonte = null;
+  gltf.scene.traverse(o => { if (o.isMesh && !fonte) fonte = o; });
+  if (!fonte) throw new Error(url + ' não traz malha');
+  const geo = fonte.geometry.toNonIndexed();
+  geo.computeBoundingBox();
+  const img = fonte.material.map?.image;
+  return { geo, luz: img ? amostrador(img) : null };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   O gabinete: cápsula em U onde cada agente trabalha.
+
+   A altura é escolhida para a bancada do módulo aterrar nos 0.78 da
+   secretária que aqui estava antes — medi que a bancada está a 40% da
+   altura do modelo, logo 0.78/0.40 = 1.95. Assim nenhum dos objetos que
+   continuam procedurais (teclado, caneca, planta, papéis, candeeiro)
+   precisou de se mexer um milímetro.
+
+   A profundidade leva um esticão à parte: à escala uniforme a cápsula
+   ficava rasa demais e o robô pairava fora da boca dela em vez de dentro
+   do seu gabinete.
+   ───────────────────────────────────────────────────────────── */
+const GAB_BANCADA = 0.78;   // altura da bancada, herdada da secretária antiga
+const GAB_FRACAO  = 0.40;   // a que fração da altura do modelo ela está
+const GAB_FUNDO   = 1.40;   // esticão só na profundidade
+
+let GABINETE = null;
+
+async function carregarGabinete(){
+  const { geo, luz } = await carregarMalha('/modelos/gabinete.glb');
+  const uv = geo.attributes.uv;
+  const bb = geo.boundingBox;
+
+  const S = (GAB_BANCADA / GAB_FRACAO) / (bb.max.y - bb.min.y);
+  const transformar = g => {
+    g.scale(S, S, S * GAB_FUNDO);
+    g.translate(0, -bb.min.y * S, 0);      // assenta o plinto no chão
+  };
+
+  const balde = { escuro: [], calha: [], casca: [] };
+  for (let t = 0; t < geo.attributes.position.count; t += 3)
+    balde[classeCor(luz, uv, t)].push(t);
+
+  const pecas = {};
+  for (const [k, tris] of Object.entries(balde))
+    pecas[k] = tris.length ? recortarTris(geo, tris, transformar) : null;
+
+  /* Onde pousar o ecrã procedural: o painel do ecrã é a maior mancha de
+     triângulos escuros virada para a abertura, e é dela que saem o centro
+     e a largura. Medir em vez de adivinhar foi o que evitou, no robô, ter
+     os olhos enterrados dentro da cabeça. */
+  let ecra = null;
+  if (pecas.escuro) {
+    const p = pecas.escuro.attributes.position, n = pecas.escuro.attributes.normal;
+    let sx = 0, sy = 0, sz = 0, c = 0;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      // só o que olha para a frente e está acima da bancada
+      if (n.getZ(i) < .6 || p.getY(i) < GAB_BANCADA) continue;
+      sx += p.getX(i); sy += p.getY(i); sz += p.getZ(i); c++;
+      x0 = Math.min(x0, p.getX(i)); x1 = Math.max(x1, p.getX(i));
+      y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i));
+    }
+    if (c > 12) ecra = {
+      x: sx / c, y: sy / c, z: sz / c + .012,
+      largura: (x1 - x0) * .92, altura: (y1 - y0) * .92,
+    };
+  }
+
+  const alto = (bb.max.y - bb.min.y) * S;
+  GABINETE = {
+    pecas, ecra, alto,
+    largura: (bb.max.x - bb.min.x) * S,
+    fundo:   (bb.max.z - bb.min.z) * S * GAB_FUNDO,
+  };
+  return GABINETE;
+}
 
 let PECAS = null;
 
@@ -829,67 +988,49 @@ function buildDesk(agent, angle) {
   const acc = toon(accent);
   const anim = { steam: [], folhas: [], olhos: [], bracos: [] };
 
-  /* ── divisórias do cubículo ─────────────────────────────── */
-  const paredeMat = toon(0xE8EDF5);
-  const parede = new THREE.Mesh(roundedBox(3.4, 1.85, .12, .08), paredeMat);
-  parede.position.set(0, .92, -1.05);
-  parede.castShadow = parede.receiveShadow = true;
-  g.add(parede, outline(parede, 1.012));
+  /* ── o gabinete ─────────────────────────────────────────────
+     Cápsula do Meshy, em vez das divisórias e da secretária que aqui
+     estavam. Traz a bancada e o painel do ecrã na própria malha, e é
+     nas calhas de luz que a cor do agente se destaca: a casca fica
+     creme de propósito, senão a calha perdia-se contra ela.
 
-  const rimo = new THREE.Mesh(roundedBox(3.44, .1, .16, .05), acc);
-  rimo.position.set(0, 1.86, -1.05); g.add(rimo);
+     A abertura do U olha para o centro da sala. O grupo do posto já vem
+     rodado de `angle + π`, por isso o módulo entra sem rotação própria. */
+  const { pecas: gp, ecra } = GABINETE;
 
-  const lateral = new THREE.Mesh(roundedBox(2.1, 1.5, .12, .08), paredeMat);
-  lateral.position.set(1.7, .75, -.1); lateral.rotation.y = Math.PI / 2;
-  lateral.castShadow = true;
-  g.add(lateral, outline(lateral, 1.012));
+  const cascaGab = toon(CREME, { side: THREE.DoubleSide });
+  const frisoGab = toon(VISEIRA, { side: THREE.DoubleSide });
+  // Basic e não Toon: uma calha de luz não deve receber sombreado, senão
+  // apaga-se do lado que fica virado para longe da luz principal.
+  const calhaGab = new THREE.MeshBasicMaterial({ color: accent });
 
-  // post-its: o toque humano que faz a diferença entre "render" e "sítio"
-  for (let i = 0; i < 3; i++) {
-    const n = new THREE.Mesh(
-      new THREE.PlaneGeometry(.26, .26),
-      new THREE.MeshBasicMaterial({ color: NOTE_CORES[i % NOTE_CORES.length] })
-    );
-    n.position.set(-1.05 + i * .42, 1.32 + (i % 2) * .3, -.985);
-    n.rotation.z = (Math.random() - .5) * .28;
-    g.add(n);
-  }
+  [[gp.casca, cascaGab], [gp.escuro, frisoGab], [gp.calha, calhaGab]]
+    .forEach(([geo, mat]) => {
+      if (!geo) return;
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = m.receiveShadow = true;
+      g.add(m);
+    });
+  anim.calha = calhaGab;
 
-  /* ── secretária ─────────────────────────────────────────── */
-  const top = new THREE.Mesh(roundedBox(2.7, .12, 1.35, .07), WHITE());
-  top.position.y = .78; top.castShadow = top.receiveShadow = true;
-  g.add(top, outline(top, 1.015));
-
-  const trim = new THREE.Mesh(roundedBox(2.74, .05, 1.39, .03), acc);
-  trim.position.y = .715; g.add(trim);
-
-  [-1.15, 1.15].forEach(x => {
-    const p = new THREE.Mesh(roundedBox(.1, .72, 1.15, .04), GREY);
-    p.position.set(x, .36, 0); p.castShadow = true; g.add(p);
-  });
-
-  /* ── monitor ────────────────────────────────────────────── */
-  const bez = new THREE.Mesh(roundedBox(1.3, .84, .07, .06), toon(0x3C4657));
-  bez.position.set(0, 1.36, -.42); bez.castShadow = true;
-  g.add(bez, outline(bez, 1.03));
-
+  /* ── ecrã ───────────────────────────────────────────────────
+     Fica procedural porque o código controla-o: tem a textura de "código"
+     a correr e o emissivo muda com o estado do agente. Assenta no painel
+     que o carregador mediu na malha, em vez de numa posição adivinhada. */
   const screenTex = SCREEN_TEX.clone();
   screenTex.needsUpdate = true;
   screenTex.repeat.set(1, .55);
   const screen = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.14, .68),
+    new THREE.PlaneGeometry(ecra ? ecra.largura : 1.14, ecra ? ecra.altura : .68),
     new THREE.MeshStandardMaterial({
       map: screenTex, emissive: accent, emissiveIntensity: .12,
       emissiveMap: screenTex, roughness: .4,
     })
   );
-  screen.position.set(0, 1.36, -.38); g.add(screen);
+  if (ecra) screen.position.set(ecra.x, ecra.y, ecra.z);
+  else screen.position.set(0, 1.36, -.38);
+  g.add(screen);
   anim.screenTex = screenTex;
-
-  const pe = new THREE.Mesh(roundedBox(.12, .3, .1, .04), GREY);
-  pe.position.set(0, .99, -.42); g.add(pe);
-  const base = new THREE.Mesh(roundedBox(.5, .05, .3, .03), GREY);
-  base.position.set(0, .855, -.42); g.add(base);
 
   /* ── teclado, rato, caneca ──────────────────────────────── */
   const tec = new THREE.Mesh(roundedBox(1.05, .05, .38, .03), toon(0xF1F5F9));
@@ -902,13 +1043,13 @@ function buildDesk(agent, angle) {
   }
 
   const rato = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 10), toon(0xF1F5F9));
-  rato.scale.set(1, .6, 1.35); rato.position.set(.72, .875, .2); g.add(rato);
+  rato.scale.set(1, .6, 1.35); rato.position.set(.55, .875, .16); g.add(rato);
 
   const caneca = new THREE.Mesh(new THREE.CylinderGeometry(.1, .085, .19, 16), acc);
-  caneca.position.set(-1.02, .93, .3); caneca.castShadow = true;
+  caneca.position.set(-.80, .93, .22); caneca.castShadow = true;
   g.add(caneca, outline(caneca, 1.07));
   const asa = new THREE.Mesh(new THREE.TorusGeometry(.06, .018, 8, 14), acc);
-  asa.position.set(-.9, .93, .3); asa.rotation.y = Math.PI / 2; g.add(asa);
+  asa.position.set(-.68, .93, .22); asa.rotation.y = Math.PI / 2; g.add(asa);
 
   // vapor: três esferinhas que sobem e desvanecem em ciclo
   for (let i = 0; i < 3; i++) {
@@ -916,20 +1057,20 @@ function buildDesk(agent, angle) {
       new THREE.SphereGeometry(.045, 10, 8),
       new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: .5 })
     );
-    s.position.set(-1.02, 1.05, .3);
+    s.position.set(-.80, 1.05, .22);
     s.userData.fase = i / 3;
     anim.steam.push(s); g.add(s);
   }
 
   /* ── planta ─────────────────────────────────────────────── */
   const vaso = new THREE.Mesh(new THREE.CylinderGeometry(.16, .12, .24, 14), toon(0xE8A87C));
-  vaso.position.set(1.15, .92, .42); vaso.castShadow = true;
+  vaso.position.set(.88, .92, .30); vaso.castShadow = true;
   g.add(vaso, outline(vaso, 1.06));
   for (let i = 0; i < 5; i++) {
     const f = new THREE.Mesh(new THREE.SphereGeometry(.13, 10, 8), toon(0x6EC17A));
     f.scale.set(.42, 1.5, .95);
     const a = (i / 5) * Math.PI * 2;
-    f.position.set(1.15 + Math.cos(a) * .1, 1.16 + (i % 2) * .07, .42 + Math.sin(a) * .1);
+    f.position.set(.88 + Math.cos(a) * .1, 1.16 + (i % 2) * .07, .30 + Math.sin(a) * .1);
     f.rotation.z = Math.cos(a) * .45; f.rotation.x = Math.sin(a) * .45;
     f.userData.base = f.rotation.z; f.userData.fase = i;
     anim.folhas.push(f); g.add(f);
@@ -938,7 +1079,7 @@ function buildDesk(agent, angle) {
   /* ── papéis empilhados ──────────────────────────────────── */
   for (let i = 0; i < 3; i++) {
     const p = new THREE.Mesh(roundedBox(.42, .012, .56, .02), toon(0xFFFFFF));
-    p.position.set(.95, .85 + i * .014, -.05);
+    p.position.set(.62, .85 + i * .014, -.05);
     p.rotation.y = (Math.random() - .5) * .25; g.add(p);
   }
 
@@ -953,26 +1094,10 @@ function buildDesk(agent, angle) {
   const lampLight = new THREE.PointLight(accent, 0, 3.4);
   lampLight.position.copy(lamp.position); g.add(lampLight);
 
-  /* ── cadeira ────────────────────────────────────────────── */
-  const cadeira = new THREE.Group();
-  const assento = new THREE.Mesh(roundedBox(.7, .12, .68, .1), WHITE());
-  assento.position.y = .52; assento.castShadow = true;
-  cadeira.add(assento, outline(assento, 1.03));
-  const costas = new THREE.Mesh(roundedBox(.66, .74, .11, .12), acc);
-  costas.position.set(0, .92, .3); costas.rotation.x = .12; costas.castShadow = true;
-  cadeira.add(costas, outline(costas, 1.03));
-  const poste = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .4, 10), GREY);
-  poste.position.y = .27; cadeira.add(poste);
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2;
-    const perna = new THREE.Mesh(roundedBox(.36, .05, .07, .025), GREY);
-    perna.position.set(Math.cos(a) * .18, .08, Math.sin(a) * .18);
-    perna.rotation.y = -a; cadeira.add(perna);
-    const roda = new THREE.Mesh(new THREE.SphereGeometry(.05, 8, 6), toon(0x9AA7B8));
-    roda.position.set(Math.cos(a) * .34, .05, Math.sin(a) * .34); cadeira.add(roda);
-  }
-  cadeira.position.set(0, 0, 1.15); g.add(cadeira);
-  anim.cadeira = cadeira;
+  /* Sem cadeira. Uma cadeira de escritório com rodas destoava de duas
+     maneiras dentro da cápsula: do gabinete high-tech, e dos robôs, que
+     não têm pernas e pairam — nunca se sentaram nela. Ainda por cima
+     espetava-se acima do rebordo e tapava o ecrã. */
 
   /* ── robô ───────────────────────────────────────────────
      Modelo GLB partido em cabeça, tronco e dois braços por
@@ -1084,9 +1209,12 @@ function buildDesk(agent, angle) {
   // mundo. Vive na cena, e a secretária limita-se a dizer-lhe qual é o
   // seu lugar — mesmo ângulo, um pouco mais para dentro, virado para o
   // monitor.
+  /* 0.80 e não 1.12 como antes: a cápsula do gabinete tem a boca em z 0.93,
+     e ao raio antigo o robô pairava à porta do seu gabinete em vez de
+     dentro dele. */
   const lugar = {
-    x: Math.sin(angle) * (R - 1.12), y: 0,
-    z: Math.cos(angle) * (R - 1.12), ry: angle,
+    x: Math.sin(angle) * (R - 0.80), y: 0,
+    z: Math.cos(angle) * (R - 0.80), ry: angle,
   };
   av.position.set(lugar.x, 0, lugar.z);
   av.rotation.y = lugar.ry;
@@ -1477,6 +1605,7 @@ async function init(){
   const [list] = await Promise.all([
     fetch('/agents').then(r => r.json()),
     carregarRobo(),
+    carregarGabinete(),
   ]);
   const sorted = ORDER.map(id => list.find(a => a.id === id)).filter(Boolean);
   list.forEach(a => { if(!sorted.includes(a)) sorted.push(a); });
@@ -1705,7 +1834,6 @@ function tick(){
     const piscar = (t + semente) % 4.2 > 4.06 ? .12 : 1;
     a.olhos.forEach(o => { o.scale.y = piscar; });
 
-    a.cadeira.rotation.y = Math.sin(t*.5 + semente)*(trabalha ? .04 : .12);
     a.screenTex.offset.y -= (trabalha ? .0055 : .0007);
     a.anel.material.opacity = aAndar ? .55 + Math.sin(t*10)*.2 : .34;
 

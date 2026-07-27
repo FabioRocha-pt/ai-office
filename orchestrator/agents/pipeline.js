@@ -10,7 +10,6 @@ const { runAgent } = require("./runner");
 const assignments = require("./assignments");
 const models = require("./models");
 const { createProject, projectPath, readMeta, writeMeta, detectEntry } = require("./vault");
-const { espacoLivreMB, limparScreenshots, MIN_DISCO_MB } = require("./build");
 const stacks = require("./stacks");
 const { construir } = require("./build");
 
@@ -18,11 +17,7 @@ const ORDER = ["ceo", "cto", "designer", "developer", "qa"];
 
 // Quanto do output do agente anterior passamos ao seguinte. Os ficheiros
 // na pasta do projeto são a fonte de verdade — isto é só contexto.
-// Baixo de propósito. Os agentes partilham a pasta e podem ler os
-// ficheiros do colega — passar-lhes 2500 chars do output era pagar
-// quatro vezes por informação que já está em disco. Isto é só o
-// suficiente para saberem o que aconteceu e onde procurar.
-const HANDOFF_CHARS = 900;
+const HANDOFF_CHARS = 2500;
 
 // Espera antes de repetir uma etapa que rebentou depressa demais.
 const RETRY_DELAY_MS = Number(process.env.AGENT_RETRY_DELAY_MS) || 60 * 1000;
@@ -64,20 +59,6 @@ async function runAgents(meta, brief, agentIds, hooks = {}, options = {}) {
   running = true;
 
   const isRevision = !!options.isRevision;
-
-  // Disco verificado ANTES de acordar ninguém. Antes só se descobria
-  // no build, ou seja, depois de os cinco agentes já terem corrido —
-  // dez minutos e uma fatia de quota deitados fora por uma coisa que se
-  // sabia à partida.
-  const livre = espacoLivreMB(projectPath(meta.id));
-  if (livre !== null && livre < MIN_DISCO_MB) {
-    running = false;
-    throw new Error(
-      `Só ${livre} MB livres na VPS e são precisos ${MIN_DISCO_MB}. ` +
-      `Apaga plataformas antigas no vault ou corre 'du -sh /root/ai-office/vault/*' ` +
-      `para ver o que está a ocupar espaço.`
-    );
-  }
 
   // Lidos uma vez por corrida: se mudares a atribuição a meio, a corrida
   // em curso mantém-se coerente do princípio ao fim.
@@ -163,10 +144,6 @@ async function runAgents(meta, brief, agentIds, hooks = {}, options = {}) {
         `\n\n--- O QUE TE COMPETE AGORA ---\n` +
         `Faz a tua parte, dentro da tua função. Grava o teu trabalho em ficheiros ` +
         `na pasta do projeto para os colegas seguintes poderem continuar a partir daí.`;
-
-      // O QA vai gerar screenshots novos; os da execução anterior só
-      // ocupam espaço e confundem quem for ver a pasta.
-      if (id === "qa") limparScreenshots(dir);
 
       const stage = {
         agent: id, label: role.label, cli: role.cli, tier, model,

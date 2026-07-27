@@ -77,7 +77,6 @@ fun textoEstado(s: String) = when (s) {
 @Composable
 fun EcraEscritorio(cliente: Cliente, aoTocar: (Agente) -> Unit) {
     val agentes by cliente.agentes.collectAsState()
-    val consola by cliente.consola.collectAsState()
     val projeto by cliente.projetoAtual.collectAsState()
 
     val ordenados = remember(agentes) {
@@ -151,19 +150,26 @@ fun EcraEscritorio(cliente: Cliente, aoTocar: (Agente) -> Unit) {
             }
         }
 
-        // consola: só a cauda
-        Box(
-            Modifier.fillMaxWidth().height(34.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(CARTAO).border(1.dp, LINHA, RoundedCornerShape(10.dp))
-                .padding(horizontal = 9.dp, vertical = 5.dp)
-        ) {
-            Text(
-                consola.takeLast(160).ifBlank { "À espera." },
-                color = Color(0xFF9FB0C6), fontSize = 10.sp, lineHeight = 13.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis
-            )
-        }
+        // A consola vive num composable próprio: assim, quando o texto
+        // muda, só ela recompõe — os cinco robôs ficam quietos.
+        Consola(cliente)
+    }
+}
+
+@Composable
+private fun Consola(cliente: Cliente) {
+    val consola by cliente.consola.collectAsState()
+    Box(
+        Modifier.fillMaxWidth().height(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(CARTAO).border(1.dp, LINHA, RoundedCornerShape(10.dp))
+            .padding(horizontal = 9.dp, vertical = 5.dp)
+    ) {
+        Text(
+            consola.takeLast(160).ifBlank { "À espera." },
+            color = Color(0xFF9FB0C6), fontSize = 10.sp, lineHeight = 13.sp,
+            maxLines = 2, overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

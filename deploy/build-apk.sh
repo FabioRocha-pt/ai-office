@@ -73,15 +73,15 @@ if [ ! -f "$APK" ]; then
 fi
 
 # Publica na pasta servida pelo orchestrator, para descarregares do telemóvel
-PUBLIC="$ROOT/orchestrator/public/apk"
+PUBLIC="$ROOT/orchestrator/public/download"
 mkdir -p "$PUBLIC"
-cp "$APK" "$PUBLIC/daisy.apk"
+cp "$APK" "$PUBLIC/consultoria.apk"
 
 echo ""
 echo "=================================================================="
 echo " APK pronto:"
-echo "   $PUBLIC/daisy.apk    ($(du -h "$APK" | cut -f1))"
+echo "   $PUBLIC/consultoria.apk    ($(du -h "$APK" | cut -f1))"
 echo ""
 echo " Descarrega no telemóvel abrindo:"
-echo "   http://SEU_IP:3000/apk/daisy.apk"
+echo "   http://SEU_IP:3000/download/consultoria.apk"
 echo "=================================================================="

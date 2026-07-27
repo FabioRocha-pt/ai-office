@@ -12,10 +12,7 @@ const path = require("path");
 // npm install de um Next.js leva 1 a 3 minutos; o build mais um par. Os
 // 10 minutos dos agentes não chegam com folga, e um timeout apertado dá
 // falhas que parecem erros de código e não são.
-// 30 minutos, não 20: um npm install frio num disco lento passa
-// facilmente dos 20, e morrer no build depois de os cinco agentes terem
-// corrido bem é o pior sítio para falhar — perde-se a corrida inteira.
-const BUILD_TIMEOUT_MS = Number(process.env.BUILD_TIMEOUT_MS) || 30 * 60 * 1000;
+const BUILD_TIMEOUT_MS = Number(process.env.BUILD_TIMEOUT_MS) || 20 * 60 * 1000;
 
 // Cada projeto Next.js são 300-500 MB de node_modules. Começar um build
 // sem espaço deixa a pasta a meio e enche o disco da VPS — mais vale
@@ -125,23 +122,4 @@ async function construir(stack, dir, onData = () => {}) {
   return { saltou: false };
 }
 
-/**
- * Apaga os screenshots da execução anterior do QA.
- *
- * São full-page e o QA corre a cada revisão: ao fim de umas correções
- * são dezenas de MB por projeto, que entram nos backups sem servirem
- * para nada. Só interessam os da última execução.
- */
-function limparScreenshots(dir) {
-  const pasta = path.join(dir, "qa-screenshots");
-  try {
-    if (fs.existsSync(pasta)) fs.rmSync(pasta, { recursive: true, force: true });
-  } catch (err) {
-    console.warn(`[qa] não consegui limpar screenshots: ${err.message}`);
-  }
-}
-
-module.exports = {
-  construir, espacoLivreMB, limparScreenshots,
-  BUILD_TIMEOUT_MS, MIN_DISCO_MB,
-};
+module.exports = { construir, espacoLivreMB, BUILD_TIMEOUT_MS, MIN_DISCO_MB };

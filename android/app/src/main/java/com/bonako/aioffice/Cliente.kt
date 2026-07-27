@@ -425,6 +425,8 @@ class Cliente(private val baseUrl: String, private val token: String) {
                     val nome = _agentes.value.firstOrNull { it.id == id }?.nome ?: id
                     escrever("\n— $nome —\n")
                 }
+                // etapa terminada: mostrar já o que ficou por emitir
+                if (estado == "done" || estado == "error") libertarConsola()
             }
 
             "stream" -> escrever(m.optString("chunk"))
@@ -433,24 +435,55 @@ class Cliente(private val baseUrl: String, private val token: String) {
                 when (m.optString("phase")) {
                     "start" -> {
                         _aCorrer.value = true
-                        _consola.value = ""
+                        limparConsola()
                         _projetoAtual.value = m.optJSONObject("project")?.optString("name")
                     }
                     "end" -> {
                         _aCorrer.value = false
                         val erro = m.optString("error")
                         escrever(if (erro.isNullOrBlank()) "\n— concluído —\n" else "\n— falhou: $erro —\n")
+                        libertarConsola()
                     }
                 }
             }
         }
     }
 
+    // O output de um agente chega em dezenas de pedaços por segundo.
+    // Emitir cada um fazia o Compose recompor o ecrã inteiro — incluindo
+    // os cinco robôs animados — a esse ritmo. Acumulamos num buffer e
+    // publicamos no máximo a cada 250ms, que é mais do que suficiente
+    // para uma consola de duas linhas.
+    private val buffer = StringBuilder()
+    private var ultimaEmissao = 0L
+
     private fun escrever(texto: String) {
         if (texto.isEmpty()) return
-        val novo = _consola.value + texto
-        // Mantém só a cauda: a consola do ecrã exterior mostra duas linhas,
-        // guardar megabytes de output não serve para nada.
-        _consola.value = if (novo.length > 4000) novo.takeLast(3000) else novo
+
+        synchronized(buffer) {
+            buffer.append(texto)
+            if (buffer.length > 4000) buffer.delete(0, buffer.length - 3000)
+
+            val agora = System.currentTimeMillis()
+            if (agora - ultimaEmissao < 250) return
+            ultimaEmissao = agora
+            _consola.value = buffer.toString()
+        }
+    }
+
+    /** Descarrega o que estiver em buffer. Chamar quando uma etapa acaba. */
+    private fun libertarConsola() {
+        synchronized(buffer) {
+            ultimaEmissao = 0L
+            _consola.value = buffer.toString()
+        }
+    }
+
+    private fun limparConsola() {
+        synchronized(buffer) {
+            buffer.setLength(0)
+            ultimaEmissao = 0L
+            _consola.value = ""
+        }
     }
 }

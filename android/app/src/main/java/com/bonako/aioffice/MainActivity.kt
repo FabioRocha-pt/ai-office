@@ -20,7 +20,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.*
-import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -57,7 +56,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var raiz: FrameLayout
     private lateinit var web: WebView
     private lateinit var boot: DaisyBootView
+    private lateinit var nav: DaisyNavBar
     private var painel: View? = null
+    private var aTransitar = false
+
+    // Ecrã nativo. O WebView so e usado nas seccoes que ainda nao foram
+    // convertidas — Dominios ja nao passa por ele.
+    private var ecraDominios: EcraDominios? = null
 
     private var speech: SpeechRecognizer? = null
     private val principal = Handler(Looper.getMainLooper())
@@ -98,7 +103,19 @@ class MainActivity : AppCompatActivity() {
         }
         web.webViewClient = clienteWeb()
         web.addJavascriptInterface(PonteVoz(), "DaisyNativa")
-        raiz.addView(web, ViewGroup.LayoutParams(-1, -1))
+        val lpWeb = FrameLayout.LayoutParams(-1, -1)
+        lpWeb.bottomMargin = dp(58)          // espaco para a barra
+        raiz.addView(web, lpWeb)
+
+        // Barra nativa por baixo do conteudo. Fica IMOVEL enquanto o
+        // conteudo transita — e isso que separa uma app de um site dentro
+        // de uma moldura.
+        nav = DaisyNavBar(this)
+        nav.visibility = View.GONE
+        val lpNav = FrameLayout.LayoutParams(-1, dp(58))
+        lpNav.gravity = android.view.Gravity.BOTTOM
+        raiz.addView(nav, lpNav)
+        nav.aoEscolher = { _, seccao, direcao -> navegarPara(seccao.caminho, direcao) }
 
         boot = DaisyBootView(this)
         raiz.addView(boot, ViewGroup.LayoutParams(-1, -1))
@@ -109,19 +126,33 @@ class MainActivity : AppCompatActivity() {
         arrancar()
     }
 
-    private var vozAtiva: Voz? = null
+    override fun onPause() {
+        super.onPause()
+        // Nada continua a sondar com a app em segundo plano. No ecra
+        // exterior do Flip, uma app que fica a trabalhar depois de
+        // fechada e a diferenca entre aquecer e nao aquecer.
+        ecraDominios?.parar()
+    }
 
     override fun onDestroy() {
-        vozAtiva?.destruir()
         speech?.destroy()
         speech = null
+        ecraDominios?.parar()
         super.onDestroy()
     }
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (web.visibility == View.VISIBLE && web.canGoBack()) web.goBack()
-        else super.onBackPressed()
+        // Fora da primeira seccao, o botao voltar leva ao Escritorio em
+        // vez de sair da app — e o que se espera de navegacao por
+        // separadores.
+        if (web.visibility == View.VISIBLE && nav.indiceDe(web.url ?: "") > 0) {
+            nav.seleccionar(0)
+        } else if (web.visibility == View.VISIBLE && web.canGoBack()) {
+            web.goBack()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     /* ──────────────────────── sequência de arranque ──────────────────── */
@@ -173,55 +204,113 @@ class MainActivity : AppCompatActivity() {
 
     /* ──────────────────────────── painel web ─────────────────────────── */
 
-    /**
-     * Ponto de viragem: daqui para a frente é tudo Compose nativo.
-     * O WebView continua a existir, mas só dentro do separador do Vault.
-     */
     private fun carregarPainel(token: String) {
-        // O cookie continua a ser aplicado: é o que o WebView do Vault e o
-        // WebSocket usam para se autenticarem sem verem a password.
+        // O token entra como COOKIE e não como cabeçalho: o WebView não
+        // deixa pôr cabeçalhos em todos os pedidos, mas o cookie viaja em
+        // tudo — incluindo no handshake do WebSocket, que é o que mantém
+        // o painel vivo. Tem de ser ANTES do loadUrl.
         Sessao.aplicarCookie(baseUrl, token)
+        // A mesma credencial serve os pedidos nativos, por cabecalho
+        // Bearer em vez de cookie.
+        Api.baseUrl = baseUrl
+        Api.token = token
 
-        val cliente = Cliente(baseUrl, token)
-        val voz = Voz(this)
-        this.vozAtiva = voz
-
-        garantirMicrofone()
-
-        setContent {
-            DaisyApp(
-                cliente = cliente,
-                baseUrl = baseUrl,
-                token = token,
-                voz = voz,
-                aoAbrirDefinicoes = { mostrarCredenciais(null) },
-            )
-        }
+        boot.progresso = 0.95f
+        boot.estado = "a carregar painel"
+        jaCarregou = false
+        web.loadUrl(baseUrl)
     }
 
-    private fun garantirMicrofone() {
-        val concedido = androidx.core.content.ContextCompat.checkSelfPermission(
-            this, android.Manifest.permission.RECORD_AUDIO
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    /**
+     * Troca de seccao com transicao.
+     *
+     * O conteudo sai para o lado de onde veio o toque e o novo entra do
+     * lado oposto — a direcao transmite onde estas na sequencia. O
+     * WebView e escondido enquanto a pagina nova carrega, senao via-se um
+     * clarao branco a meio da animacao.
+     */
+    private fun navegarPara(caminho: String, direcao: Int) {
+        if (aTransitar) return
+        aTransitar = true
 
-        if (!concedido) {
-            androidx.core.app.ActivityCompat.requestPermissions(
-                this, arrayOf(android.Manifest.permission.RECORD_AUDIO), 1
-            )
-        }
+        val desloc = (largura().toFloat() * 0.22f) * -direcao
+        val nativo = caminho == "/dominios.html"
+
+        // Sai o que estiver visivel
+        val aSair: View = if (ecraDominios?.visibility == View.VISIBLE) ecraDominios!! else web
+
+        aSair.animate()
+            .alpha(0f).translationX(desloc)
+            .setDuration(150)
+            .withEndAction {
+                aSair.visibility = View.GONE
+                if (nativo) mostrarDominios(-desloc) else mostrarWeb(caminho, -desloc)
+            }
+            .start()
     }
+
+    /** Ecra nativo de dominios: le ao abrir, sem ligacao persistente. */
+    private fun mostrarDominios(entradaX: Float) {
+        val e = ecraDominios ?: EcraDominios(this).also {
+            ecraDominios = it
+            val lp = FrameLayout.LayoutParams(-1, -1)
+            lp.bottomMargin = dp(58)
+            raiz.addView(it, lp)
+        }
+        e.alpha = 0f
+        e.translationX = entradaX
+        e.visibility = View.VISIBLE
+        e.carregar()
+        e.animate().alpha(1f).translationX(0f).setDuration(220)
+            .withEndAction { aTransitar = false }.start()
+    }
+
+    private fun mostrarWeb(caminho: String, entradaX: Float) {
+        ecraDominios?.parar()
+        web.visibility = View.VISIBLE
+        web.translationX = entradaX
+        web.loadUrl(baseUrl + caminho)
+        // A entrada e disparada no onPageFinished, quando a pagina nova
+        // ja esta desenhada — senao via-se um clarao branco.
+    }
+
+    private fun entrarNaSeccao() {
+        web.animate()
+            .alpha(1f).translationX(0f)
+            .setDuration(220)
+            .withEndAction { aTransitar = false }
+            .start()
+    }
+
+    private fun largura(): Int = resources.displayMetrics.widthPixels
 
     private fun clienteWeb() = object : WebViewClient() {
         override fun onPageFinished(v: WebView?, url: String?) {
+            anunciarVozNativa()
+
+            // Manter a barra a par da pagina, mesmo quando a navegacao
+            // parte de um link dentro do HTML e nao de um toque na barra.
+            val i = nav.indiceDe(url ?: "")
+            if (i >= 0) nav.seleccionar(i, animar = true, notificar = false)
+
+            if (aTransitar && web.visibility == View.VISIBLE) { entrarNaSeccao(); return }
+
             if (jaCarregou) return
             jaCarregou = true
             boot.progresso = 1f
             boot.estado = "pronta"
             principal.postDelayed({
+                web.alpha = 0f
                 web.visibility = View.VISIBLE
-                boot.visibility = View.GONE
-                anunciarVozNativa()
-            }, 320)
+                nav.alpha = 0f
+                nav.visibility = View.VISIBLE
+                // O arranque desvanece enquanto o painel aparece: as duas
+                // animacoes sobrepoem-se, sem ecra vazio entre elas.
+                boot.animate().alpha(0f).setDuration(340)
+                    .withEndAction { boot.visibility = View.GONE }.start()
+                web.animate().alpha(1f).setDuration(340).start()
+                nav.animate().alpha(1f).setDuration(340).setStartDelay(120).start()
+            }, 260)
         }
 
         override fun onReceivedHttpError(v: WebView?, p: WebResourceRequest?, r: WebResourceResponse?) {
@@ -323,6 +412,8 @@ class MainActivity : AppCompatActivity() {
         limparPainel()
         boot.visibility = View.GONE
         web.visibility = View.GONE
+        nav.visibility = View.GONE
+        ecraDominios?.let { it.parar(); it.visibility = View.GONE }
 
         val c = caixa()
         c.addView(titulo("D.A.I.S.Y."))
@@ -399,6 +490,7 @@ class MainActivity : AppCompatActivity() {
         limparPainel()
         boot.visibility = View.GONE
         web.visibility = View.GONE
+        nav.visibility = View.GONE
 
         val c = caixa()
         c.addView(titulo(tituloTxt))

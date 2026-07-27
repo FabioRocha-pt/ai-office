@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Domínios · D.A.I.S.Y.</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#EDF1F7;--panel:#FFF;--ink:#1B2230;--ink-2:#5A6579;--ink-3:#93A0B4;
+    --line:#E2E8F1;--ok:#10B981;--warn:#F59E0B;--bad:#EF4444;--blue:#3B82F6}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:Inter,system-ui,sans-serif;color:var(--ink)}
+  header{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;
+    background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  .logo{font-weight:700;font-size:15px}.logo span{color:var(--ink-3);font-weight:500}
+  .nav a{font-size:12.5px;font-weight:600;color:var(--ink-2);text-decoration:none;
+    padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:#fff;margin-left:6px}
+  .nav a.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  main{max-width:1080px;margin:0 auto;padding:26px 22px 60px}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
+  .sub{color:var(--ink-2);font-size:14px;margin:0 0 20px}
+  .resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .kpi .rot{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600}
+  .kpi .val{font-size:26px;font-weight:700;margin-top:5px}
+  .kpi .val.bad{color:var(--bad)}.kpi .val.warn{color:var(--warn)}.kpi .val.ok{color:var(--ok)}
+  .barra{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+  button{font-family:inherit;font-size:13px;font-weight:600;padding:9px 14px;border-radius:9px;
+    border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
+  button.p{background:var(--ink);color:#fff;border-color:var(--ink)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .d{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;margin-bottom:9px;border-left:4px solid var(--line)}
+  .d.critico{border-left-color:var(--bad)}
+  .d.aviso{border-left-color:var(--warn)}
+  .d.bom{border-left-color:var(--ok)}
+  .d .topo{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .d .nome{font-weight:650;font-size:15px;font-family:'IBM Plex Mono',monospace}
+  .d .dono{font-size:12px;color:var(--ink-3);margin-top:2px}
+  .est{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;
+    text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+  .est.critico{background:#FEE2E2;color:#991B1B}
+  .est.aviso{background:#FEF3C7;color:#92400E}
+  .est.bom{background:#D1FAE5;color:#065F46}
+  .det{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;
+    color:var(--ink-2);font-family:'IBM Plex Mono',monospace}
+  .det b{color:var(--ink);font-weight:600}
+  .tag{font-size:10.5px;padding:2px 7px;border-radius:5px;background:#F1F5F9;color:var(--ink-2)}
+  .tag.fora{background:#FEF3C7;color:#92400E}
+  .tag.semdono{background:#EFF6FF;color:#1D4ED8}
+  .vazio{text-align:center;padding:50px;color:var(--ink-3)}
+  .aviso-caixa{background:#FEF3C7;border:1px solid #FDE68A;color:#92400E;
+    border-radius:12px;padding:12px 14px;font-size:13px;margin-bottom:16px}
+
+  /* Dentro da app D.A.I.S.Y. a navegação é NATIVA (DaisyNavBar). Mostrar
+     também a barra HTML daria duas barras a dizer o mesmo, uma delas a
+     deslizar com o conteúdo durante as transições. */
+  body.na-app header .nav{display:none}
+  body.na-app header{justify-content:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">D.A.I.S.Y. <span>· Domínios</span></div>
+  <nav class="nav">
+    <a href="/office.html">Escritório</a>
+    <a href="/faturacao.html">Mensalidades</a>
+    <a href="/dominios.html" class="on">Domínios</a>
+  </nav>
+</header>
+<main>
+  <h1>Domínios</h1>
+  <p class="sub">Certificados, DNS e disponibilidade de tudo o que alojas.</p>
+  <div id="avisos"></div>
+  <div class="resumo" id="resumo"></div>
+  <div class="barra">
+    <button class="p" id="btVerificar">Verificar tudo</button>
+    <span id="quando" style="font-size:12px;color:var(--ink-3)"></span>
+  </div>
+  <div id="lista"><div class="vazio">A carregar…</div></div>
+</main>
+<script>
+// A app injeta window.DAISY_VOZ_NATIVA; serve também para saber que
+// estamos dentro dela e não num browser.
+if (window.DAISY_VOZ_NATIVA) document.body.classList.add('na-app');
+else window.addEventListener('daisy-voz-pronta', () => document.body.classList.add('na-app'));
+
+const api = async (u,o) => {
+  const r = await fetch(u,o); const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || ('HTTP '+r.status)); return j;
+};
+let inv = null, sau = null, temporizador = null;
+
+async function carregar(){
+  try { inv = await api('/dominios'); } catch(e){ inv = {dominios:[],erroPlesk:e.message}; }
+  try { sau = await api('/dominios/saude'); } catch(e){ sau = {resultados:[],resumo:null}; }
+  desenhar();
+  // Enquanto varre, sonda de 3 em 3 segundos. O varrimento corre em
+  // fundo no servidor, por isso a página tem de perguntar.
+  if (sau.aVarrer && !temporizador) temporizador = setInterval(async () => {
+    sau = await api('/dominios/saude');
+    desenhar();
+    if (!sau.aVarrer) { clearInterval(temporizador); temporizador = null; }
+  }, 3000);
+}
+
+function desenhar(){
+  const avisos = [];
+  if (inv?.erroPlesk) avisos.push(`<b>Plesk:</b> ${inv.erroPlesk}`);
+  else if (inv && !inv.pleskConfigurado) avisos.push(
+    'O Plesk não está configurado — só aparecem os domínios que associaste a clientes. Define PLESK_URL e PLESK_API_KEY no .env.');
+  document.getElementById('avisos').innerHTML = avisos.length
+    ? `<div class="aviso-caixa">${avisos.join('<br>')}</div>` : '';
+
+  const r = sau?.resumo;
+  document.getElementById('resumo').innerHTML = r ? `
+    <div class="kpi"><div class="rot">Críticos</div><div class="val ${r.criticos?'bad':'ok'}">${r.criticos}</div></div>
+    <div class="kpi"><div class="rot">Avisos</div><div class="val ${r.avisos?'warn':'ok'}">${r.avisos}</div></div>
+    <div class="kpi"><div class="rot">Em ordem</div><div class="val ok">${r.bons}</div></div>
+    <div class="kpi"><div class="rot">Certificados a expirar</div><div class="val ${r.certificadosAExpirar?'warn':'ok'}">${r.certificadosAExpirar}</div></div>`
+    : `<div class="kpi"><div class="rot">Domínios conhecidos</div><div class="val">${inv?.dominios.length||0}</div>
+       <div style="font-size:12px;color:var(--ink-3);margin-top:2px">ainda não verificados</div></div>`;
+
+  document.getElementById('quando').textContent = sau?.aVarrer ? 'A verificar…'
+    : sau?.em ? 'Última verificação: ' + new Date(sau.em).toLocaleString('pt-PT') : '';
+  document.getElementById('btVerificar').disabled = !!sau?.aVarrer;
+
+  const verificados = new Map((sau?.resultados||[]).map(x=>[x.dominio,x]));
+  const linhas = (inv?.dominios||[]).map(d => verificados.get(d.dominio) || {...d, estado:null});
+
+  // Problemas primeiro; dentro do mesmo nível, por nome.
+  const ordem = {critico:0, aviso:1, bom:2};
+  linhas.sort((a,b)=>(ordem[a.estado?.nivel]??3)-(ordem[b.estado?.nivel]??3)
+    || a.dominio.localeCompare(b.dominio));
+
+  document.getElementById('lista').innerHTML = linhas.length ? linhas.map(d=>{
+    const n = d.estado?.nivel || '';
+    const c = d.cert;
+    const det = [];
+    if (d.https?.codigo) det.push(`HTTP <b>${d.https.codigo}</b>`);
+    if (d.https?.ms) det.push(`<b>${d.https.ms}</b>ms`);
+    if (c?.diasParaExpirar != null) det.push(`cert <b>${c.diasParaExpirar}d</b> · ${c.emissor}`);
+    if (d.dns?.ipv4?.length) det.push(`IP <b>${d.dns.ipv4[0]}</b>`);
+    if (d.mx?.ok) det.push('email <b>sim</b>');
+    if (d.http && !d.http.redirecionaParaHttps && d.https?.ok) det.push('<b>sem</b> redir. HTTPS');
+    if (d.https?.hsts) det.push('HSTS');
+
+    return `<div class="d ${n}">
+      <div class="topo">
+        <div>
+          <div class="nome">${d.dominio}</div>
+          <div class="dono">
+            ${d.cliente ? d.cliente.nome : '<span class="tag semdono">sem cliente</span>'}
+            ${d.noPlesk === false ? '<span class="tag fora">fora do Plesk</span>' : ''}
+            ${d.plesk?.tipo ? `<span class="tag">${d.plesk.tipo}</span>` : ''}
+          </div>
+        </div>
+        ${d.estado ? `<span class="est ${n}">${d.estado.resumo}</span>`
+                   : '<span class="est" style="background:#F1F5F9;color:#5A6579">por verificar</span>'}
+      </div>
+      ${det.length ? `<div class="det">${det.join('')}</div>`.replace(/(<\/b>)(?=[A-Za-zÀ-ÿ])/g,'$1 ') : ''}
+    </div>`;
+  }).join('') : '<div class="vazio">Nenhum domínio conhecido. Associa domínios a clientes nas Mensalidades, ou liga o Plesk.</div>';
+}
+
+document.getElementById('btVerificar').onclick = async () => {
+  document.getElementById('btVerificar').disabled = true;
+  try { await api('/dominios/saude/verificar', {method:'POST'}); }
+  catch(e){ alert(e.message); }
+  setTimeout(carregar, 800);
+};
+
+carregar();
+</script>
+</body>
+</html>

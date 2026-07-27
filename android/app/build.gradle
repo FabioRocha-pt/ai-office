@@ -28,17 +28,8 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = '17'
-        // O HorizontalPager ainda é API experimental do Compose. Optamos
-        // aqui uma vez, em vez de anotar cada sítio que o usa.
-        freeCompilerArgs += ['-opt-in=androidx.compose.foundation.ExperimentalFoundationApi']
-    }
-    buildFeatures { compose true }
-    // Tem de casar com o Kotlin 1.9.24 declarado na raiz. Uma versão
-    // trocada aqui dá erro de compilação logo no arranque.
-    composeOptions { kotlinCompilerExtensionVersion '1.5.14' }
-    packaging { resources { excludes += '/META-INF/{AL2.0,LGPL2.1}' } }
+    kotlinOptions { jvmTarget = '17' }
+    buildFeatures { viewBinding false }
 }
 
 dependencies {
@@ -47,17 +38,4 @@ dependencies {
     // BiometricPrompt + CryptoObject. O AppCompatActivity já estende
     // FragmentActivity, que é o que o BiometricPrompt exige.
     implementation 'androidx.biometric:biometric:1.1.0'
-
-    // --- Compose: os ecrãs são nativos, não WebView ---
-    implementation platform('androidx.compose:compose-bom:2024.06.00')
-    implementation 'androidx.compose.ui:ui'
-    implementation 'androidx.compose.ui:ui-graphics'
-    implementation 'androidx.compose.foundation:foundation'
-    implementation 'androidx.compose.material3:material3'
-    implementation 'androidx.activity:activity-compose:1.9.0'
-    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.3'
-
-    // WebSocket para o estado ao vivo. O HttpURLConnection não faz
-    // WebSocket, e escrever o handshake à mão não vale a pena.
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }

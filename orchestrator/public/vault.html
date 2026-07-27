@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vault — AI Office</title>
-<script src="/tema.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -33,7 +32,7 @@
   h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
   .sub{color:var(--ink-2);font-size:14px;margin:0 0 24px}
 
-  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr))}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
 
   .card{
     background:var(--panel);border:1px solid var(--line);border-radius:14px;
@@ -65,36 +64,18 @@
   .stage.ok{background:var(--ok)}
   .stage.bad{background:var(--bad)}
 
-  /* Grelha, não fila: quatro botões numa fila transbordavam a largura
-     do cartão e o último ficava cortado. Em 2x2 cabem sempre, e no
-     telemóvel passam a uma coluna. */
-  .actions{
-    display:grid;gap:7px;margin-top:2px;
-    grid-template-columns:1fr 1fr;
-  }
+  .actions{display:flex;gap:7px;margin-top:2px}
   .btn{
     border:1px solid var(--line);background:#fff;color:var(--ink);
-    border-radius:9px;padding:10px 12px;font:inherit;font-size:13px;font-weight:600;
-    cursor:pointer;text-decoration:none;
-    display:inline-flex;align-items:center;justify-content:center;gap:6px;
-    white-space:nowrap;
+    border-radius:9px;padding:9px 14px;font:inherit;font-size:13px;font-weight:600;
+    cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;
   }
   .btn:hover{background:#F7F9FC}
   .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
   .btn.primary:hover{background:#2C374A}
-  .btn.danger{color:var(--bad);border-color:#FBD5D5}
+  .btn.danger{margin-left:auto;color:var(--bad);border-color:#FBD5D5}
   .btn.danger:hover{background:#FEF2F2}
   .btn:disabled{opacity:.45;cursor:not-allowed}
-
-  @media (max-width:520px){
-    main{padding:18px 12px 44px}
-    .grid{grid-template-columns:1fr}
-    .actions{grid-template-columns:1fr}
-    h1{font-size:22px}
-    .top{flex-wrap:wrap;gap:8px}
-    .nav{margin-left:0;width:100%;overflow-x:auto}
-    .fix .who{gap:5px}
-  }
 
   .empty{
     background:var(--panel);border:1px dashed #CBD5E5;border-radius:14px;
@@ -127,57 +108,11 @@
     border-radius:9px;padding:10px 18px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
   .fix .go:disabled{opacity:.45;cursor:not-allowed}
 
-  /* ---- tema escuro ---- */
-  html[data-tema="escuro"]{
-    --bg:#0D1016;
-    --panel:#151A21;
-    --ink:#E5EAF2;
-    --ink-2:#9BA7B8;
-    --ink-3:#68748A;
-    --line:#242B36;
-  }
-  html[data-tema="escuro"] body{background:var(--bg)}
-  html[data-tema="escuro"] .top{background:rgba(21,26,33,.85)}
-  html[data-tema="escuro"] .nav a{background:var(--panel);border-color:var(--line);color:var(--ink-2)}
-  html[data-tema="escuro"] .nav a:hover{background:#1C222B;color:var(--ink)}
-  html[data-tema="escuro"] .nav a.on{background:var(--ink);color:#0D1016;border-color:var(--ink)}
-  html[data-tema="escuro"] .btn{background:var(--panel);border-color:var(--line);color:var(--ink)}
-  html[data-tema="escuro"] .btn:hover{background:#1C222B}
-  html[data-tema="escuro"] .btn.primary{background:var(--ink);color:#0D1016;border-color:var(--ink)}
-  html[data-tema="escuro"] .btn.primary:hover{background:#fff}
-  html[data-tema="escuro"] .btn.danger{background:#1F1315;border-color:#4A2328;color:#F87171}
-  html[data-tema="escuro"] .card,
-  html[data-tema="escuro"] .kpi,
-  html[data-tema="escuro"] .empty{background:var(--panel);border-color:var(--line)}
-  html[data-tema="escuro"] textarea,
-  html[data-tema="escuro"] input{background:#0F131A;border-color:var(--line);color:var(--ink)}
-  html[data-tema="escuro"] .row .track,
-  html[data-tema="escuro"] .stage{background:#1B222C}
-  html[data-tema="escuro"] .tag.done{background:#123024;color:#4ADE80}
-  html[data-tema="escuro"] .tag.building{background:#33260B;color:#FBBF24}
-  html[data-tema="escuro"] .tag.failed{background:#331416;color:#F87171}
-  html[data-tema="escuro"] .tag.unknown{background:#1C222B;color:var(--ink-2)}
-  html[data-tema="escuro"] .fix .who button{background:var(--panel);border-color:var(--line);color:var(--ink-2)}
-  html[data-tema="escuro"] .fix .who button.on{background:var(--ink);color:#0D1016;border-color:var(--ink)}
-  html[data-tema="escuro"] .fix .go,
-  html[data-tema="escuro"] .brief-bar button{background:var(--ink);color:#0D1016}
-  html[data-tema="escuro"] .axis{stroke:var(--line)}
-  html[data-tema="escuro"] .glabel{fill:var(--ink-3)}
-  html[data-tema="escuro"] .dash{background:var(--panel);border-color:var(--line)}
-  html[data-tema="escuro"] .agent-row:hover,
-  html[data-tema="escuro"] .act:hover{background:#1C222B}
-  html[data-tema="escuro"] .act{background:var(--panel);border-color:var(--line);color:var(--ink)}
-  html[data-tema="escuro"] .pill{background:#1C222B;border-color:var(--line);color:var(--ink-2)}
-
-  /* botão do tema */
-  #tema-btn{
-    font-size:15px;line-height:1;cursor:pointer;
-    background:#fff;border:1px solid var(--line);color:var(--ink-2);
-    border-radius:8px;padding:6px 11px;font-family:inherit;
-  }
-  #tema-btn:hover{background:#F2F5FA;color:var(--ink)}
-  html[data-tema="escuro"] #tema-btn{background:var(--panel);color:var(--ink-2)}
-  html[data-tema="escuro"] #tema-btn:hover{background:#1C222B;color:var(--ink)}
+  /* Dentro da app D.A.I.S.Y. a navegação é NATIVA (DaisyNavBar). Mostrar
+     também a barra HTML daria duas barras a dizer o mesmo, uma delas a
+     deslizar com o conteúdo durante as transições. */
+  body.na-app header .nav{display:none}
+  body.na-app header{justify-content:center}
 </style>
 </head>
 <body>
@@ -188,8 +123,9 @@
     <a href="/office.html">Escritório</a>
     <a href="/vault.html" class="on">Vault</a>
     <a href="/graphs.html">Gráficos</a>
+    <a href="/faturacao.html">Mensalidades</a>
+    <a href="/dominios.html">Domínios</a>
     <a href="/flip.html">Telemóvel</a>
-    <button id="tema-btn" type="button">☾</button>
   </nav>
 </div>
 
@@ -200,6 +136,11 @@
 </main>
 
 <script>
+// A app injeta window.DAISY_VOZ_NATIVA; serve também para saber que
+// estamos dentro dela e não num browser.
+if (window.DAISY_VOZ_NATIVA) document.body.classList.add('na-app');
+else window.addEventListener('daisy-voz-pronta', () => document.body.classList.add('na-app'));
+
 const list = document.getElementById('list');
 
 const fmtBytes = b => b < 1024 ? b + ' B'
@@ -263,11 +204,10 @@ async function load(){
         <span>${fmtDate(p.createdAt)}</span>
       </div>
       <div class="actions">
-        <button class="btn primary open" style="grid-column:1/-1" ${canOpen ? '' : 'disabled'}>
+        <button class="btn primary open" ${canOpen ? '' : 'disabled'}>
           ${canOpen ? 'Abrir plataforma' : 'Nada para abrir'}
         </button>
         <button class="btn fixbtn">Corrigir</button>
-        <button class="btn ghbtn">GitHub</button>
         <button class="btn danger del">Apagar</button>
       </div>
       <div class="note"></div>
@@ -307,21 +247,6 @@ async function load(){
     const fix = card.querySelector('.fix');
     const fixTa = fix.querySelector('textarea');
     const fixGo = fix.querySelector('.go');
-
-    card.querySelector('.ghbtn').addEventListener('click', async (e) => {
-      const b = e.currentTarget;
-      b.disabled = true; b.textContent = 'A publicar…';
-      try{
-        const r = await fetch(`/projects/${encodeURIComponent(p.id)}/publicar`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ privado: true })
-        });
-        const d = await r.json();
-        if(!r.ok) throw new Error(d.error || 'Falhou.');
-        note.innerHTML = `Publicado: <a href="${d.url}" target="_blank" style="color:var(--blue)">${d.url}</a>`;
-      }catch(err){ note.textContent = err.message; }
-      finally{ b.disabled = false; b.textContent = 'GitHub'; }
-    });
 
     card.querySelector('.fixbtn').addEventListener('click', () => {
       fix.classList.toggle('open');

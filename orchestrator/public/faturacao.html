@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mensalidades · D.A.I.S.Y.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EDF1F7;--panel:#FFF;--ink:#1B2230;--ink-2:#5A6579;--ink-3:#93A0B4;
+    --line:#E2E8F1;--ok:#10B981;--warn:#F59E0B;--bad:#EF4444;--blue:#3B82F6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:Inter,system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+  header{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 22px;background:var(--panel);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:10}
+  .logo{font-weight:700;font-size:15px}
+  .logo span{color:var(--ink-3);font-weight:500}
+  .nav a{font-size:12.5px;font-weight:600;color:var(--ink-2);text-decoration:none;
+    padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:#fff;margin-left:6px}
+  .nav a.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  main{max-width:1080px;margin:0 auto;padding:26px 22px 60px}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
+  .sub{color:var(--ink-2);font-size:14px;margin:0 0 22px}
+
+  .resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .kpi .rot{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600}
+  .kpi .val{font-size:24px;font-weight:700;margin-top:6px;letter-spacing:-.02em}
+  .kpi .val.mau{color:var(--bad)} .kpi .val.bom{color:var(--ok)}
+  .kpi .nota{font-size:12px;color:var(--ink-3);margin-top:2px}
+
+  .cartao{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:18px;margin-bottom:14px}
+  .cliente{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .cliente h3{margin:0;font-size:17px;font-weight:650}
+  .cliente .meta{font-size:12.5px;color:var(--ink-3);margin-top:3px;font-family:'IBM Plex Mono',monospace}
+  .estado{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:.06em}
+  .estado.ok{background:#D1FAE5;color:#065F46}
+  .estado.aviso{background:#FEF3C7;color:#92400E}
+  .estado.mau{background:#FEE2E2;color:#991B1B}
+
+  .meses{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+  .mes{font-size:12px;font-family:'IBM Plex Mono',monospace;padding:6px 10px;border-radius:8px;
+    border:1px solid var(--line);background:#F8FAFC;color:var(--ink-2)}
+  .mes.atraso{background:#FEF2F2;border-color:#FECACA;color:#991B1B;font-weight:600}
+  .dom{display:inline-block;font-size:11.5px;font-family:'IBM Plex Mono',monospace;
+    padding:3px 8px;border-radius:6px;background:#EFF6FF;color:#1D4ED8;margin:4px 4px 0 0}
+  .dom.fora{background:#FEF3C7;color:#92400E}
+
+  .acoes{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  button{font-family:inherit;font-size:13px;font-weight:600;padding:9px 14px;border-radius:9px;
+    border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
+  button.p{background:var(--ink);color:#fff;border-color:var(--ink)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+
+  dialog{border:none;border-radius:16px;padding:0;max-width:440px;width:92vw;
+    box-shadow:0 24px 60px rgba(15,23,42,.22)}
+  dialog::backdrop{background:rgba(15,23,42,.4)}
+  .modal{padding:22px}
+  .modal h2{margin:0 0 4px;font-size:19px}
+  .modal p.aj{margin:0 0 16px;font-size:13px;color:var(--ink-2)}
+  label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin:12px 0 5px}
+  input,select{width:100%;font-family:inherit;font-size:14px;padding:10px 12px;
+    border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+  .dica{font-size:11.5px;color:var(--ink-3);margin-top:4px}
+  .erro{color:var(--bad);font-size:13px;margin-top:10px;min-height:18px}
+  .vazio{text-align:center;padding:50px 20px;color:var(--ink-3)}
+  .aviso{background:#FEF3C7;border:1px solid #FDE68A;color:#92400E;
+    border-radius:12px;padding:12px 14px;font-size:13px;margin-bottom:16px}
+
+  /* Dentro da app D.A.I.S.Y. a navegação é NATIVA (DaisyNavBar). Mostrar
+     também a barra HTML daria duas barras a dizer o mesmo, uma delas a
+     deslizar com o conteúdo durante as transições. */
+  body.na-app header .nav{display:none}
+  body.na-app header{justify-content:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">D.A.I.S.Y. <span>· Mensalidades</span></div>
+  <nav class="nav">
+    <a href="/office.html">Escritório</a>
+    <a href="/vault.html">Vault</a>
+    <a href="/faturacao.html" class="on">Mensalidades</a>
+    <a href="/dominios.html">Domínios</a>
+  </nav>
+</header>
+
+<main>
+  <h1>Mensalidades</h1>
+  <p class="sub">Quem já pagou, quem falta, e há quanto tempo.</p>
+
+  <div id="avisoPlesk"></div>
+  <div class="resumo" id="resumo"></div>
+  <div id="lista"></div>
+
+  <div class="acoes" style="margin-top:20px">
+    <button class="p" id="btNovo">Adicionar cliente</button>
+    <button id="btOrfaos">Domínios sem cliente</button>
+  </div>
+</main>
+
+<dialog id="dlgCliente"><div class="modal">
+  <h2>Novo cliente</h2>
+  <p class="aj">O valor é guardado em cêntimos para não haver erros de arredondamento.</p>
+  <label>Nome</label><input id="cNome" placeholder="Nome ou empresa">
+  <label>Email</label><input id="cEmail" type="email" placeholder="opcional">
+  <label>Valor por período (€)</label>
+  <input id="cValor" type="number" step="0.01" min="0.01" placeholder="49.90">
+  <div class="dica">Escreve em euros; a conversão é feita aqui.</div>
+  <label>Periodicidade</label>
+  <select id="cPeriodo">
+    <option value="mensal">Mensal</option>
+    <option value="trimestral">Trimestral</option>
+    <option value="semestral">Semestral</option>
+    <option value="anual">Anual</option>
+  </select>
+  <label>Dia de vencimento</label>
+  <input id="cDia" type="number" min="1" max="31" value="1">
+  <div class="dica">Se puseres 31, meses mais curtos vencem no último dia.</div>
+  <label>Primeiro mês a cobrar</label><input id="cInicio" type="month">
+  <label>Domínios (separados por vírgula)</label>
+  <input id="cDominios" placeholder="exemplo.pt, outro.com">
+  <div class="dica">Serve para cruzar com o Plesk.</div>
+  <div class="erro" id="erroCliente"></div>
+  <div class="acoes">
+    <button class="p" id="btGuardar">Guardar</button>
+    <button onclick="dlgCliente.close()">Cancelar</button>
+  </div>
+</div></dialog>
+
+<dialog id="dlgPagar"><div class="modal">
+  <h2>Registar pagamento</h2>
+  <p class="aj" id="pagAjuda"></p>
+  <label>Mês a que respeita</label><input id="pMes" type="month">
+  <label>Valor recebido (€)</label><input id="pValor" type="number" step="0.01">
+  <label>Data em que recebeste</label><input id="pData" type="date">
+  <label>Método</label>
+  <select id="pMetodo">
+    <option value="transferencia">Transferência</option>
+    <option value="mbway">MB Way</option>
+    <option value="numerario">Numerário</option>
+    <option value="outro">Outro</option>
+  </select>
+  <label>Referência</label><input id="pRef" placeholder="opcional">
+  <div class="erro" id="erroPagar"></div>
+  <div class="acoes">
+    <button class="p" id="btPagar">Registar</button>
+    <button onclick="dlgPagar.close()">Cancelar</button>
+  </div>
+</div></dialog>
+
+<dialog id="dlgOrfaos"><div class="modal">
+  <h2>Domínios sem cliente</h2>
+  <p class="aj">Alojados no Plesk mas não associados a ninguém — podem ser sites que não estás a cobrar.</p>
+  <div id="listaOrfaos"></div>
+  <div class="acoes"><button onclick="dlgOrfaos.close()">Fechar</button></div>
+</div></dialog>
+
+<script>
+// A app injeta window.DAISY_VOZ_NATIVA; serve também para saber que
+// estamos dentro dela e não num browser.
+if (window.DAISY_VOZ_NATIVA) document.body.classList.add('na-app');
+else window.addEventListener('daisy-voz-pronta', () => document.body.classList.add('na-app'));
+
+const eur = c => (c/100).toLocaleString('pt-PT',{style:'currency',currency:'EUR'});
+const api = async (url, opts) => {
+  const r = await fetch(url, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+};
+
+let estado = null, plesk = null, clienteAtual = null;
+
+async function carregar(){
+  estado = await api('/faturacao/estado');
+  // O Plesk é acessório: se falhar, a página continua a funcionar. Por
+  // isso vai num catch próprio e não trava o resto.
+  try { plesk = await api('/plesk/cruzar'); }
+  catch(e){ plesk = { configurado:true, error:e.message, porCliente:[], orfaos:[] }; }
+  desenhar();
+}
+
+function desenhar(){
+  const r = estado.resumo;
+
+  document.getElementById('avisoPlesk').innerHTML = plesk?.error
+    ? `<div class="aviso"><b>Plesk indisponível:</b> ${plesk.error}<br>
+       As mensalidades continuam a funcionar; só não há domínios cruzados.</div>` : '';
+
+  document.getElementById('resumo').innerHTML = `
+    <div class="kpi"><div class="rot">Em atraso</div>
+      <div class="val ${r.totalAtrasadoCentimos ? 'mau' : 'bom'}">${eur(r.totalAtrasadoCentimos)}</div>
+      <div class="nota">${r.comAtraso} de ${r.clientesAtivos} clientes</div></div>
+    <div class="kpi"><div class="rot">Por receber</div>
+      <div class="val">${eur(r.totalEmFaltaCentimos)}</div>
+      <div class="nota">inclui o mês corrente</div></div>
+    <div class="kpi"><div class="rot">Recebido este mês</div>
+      <div class="val bom">${eur(r.recebidoEsteMesCentimos)}</div></div>
+    <div class="kpi"><div class="rot">Previsto por mês</div>
+      <div class="val">${eur(r.previstoMensalCentimos)}</div>
+      <div class="nota">anuais contam 1/12</div></div>`;
+
+  const domsPorCliente = new Map(
+    (plesk?.porCliente || []).map(p => [p.clienteId, p.dominios]));
+
+  document.getElementById('lista').innerHTML = estado.linhas.length ? estado.linhas.map(l => {
+    const c = l.cliente;
+    const cls = l.totalAtrasadoCentimos ? 'mau' : (l.emDia ? 'ok' : 'aviso');
+    const txt = l.totalAtrasadoCentimos ? 'em atraso' : (l.emDia ? 'em dia' : 'a vencer');
+    const pior = Math.max(0, ...l.emFalta.map(m => m.diasAtraso));
+
+    const doms = (domsPorCliente.get(c.id) || c.dominios.map(n => ({nome:n, noPlesk:null})))
+      .map(d => `<span class="dom ${d.noPlesk === false ? 'fora' : ''}"
+                   title="${d.noPlesk === false ? 'não encontrado no Plesk' : ''}">${d.nome}</span>`).join('');
+
+    return `<div class="cartao">
+      <div class="cliente">
+        <div>
+          <h3>${c.nome}</h3>
+          <div class="meta">${eur(c.valorCentimos)} · ${c.periodicidade} · vence dia ${c.diaVencimento}</div>
+          <div>${doms}</div>
+        </div>
+        <div style="text-align:right">
+          <span class="estado ${cls}">${txt}</span>
+          ${l.totalEmFaltaCentimos ? `<div style="font-size:19px;font-weight:700;margin-top:8px">${eur(l.totalEmFaltaCentimos)}</div>` : ''}
+          ${pior ? `<div style="font-size:12px;color:var(--bad)">há ${pior} dias</div>` : ''}
+        </div>
+      </div>
+      ${l.emFalta.length ? `<div class="meses">${l.emFalta.map(m =>
+        `<span class="mes ${m.atraso ? 'atraso' : ''}">${m.mes} · ${eur(m.faltaCentimos)}${m.atrasado ? ' ⚠' : ''}</span>`).join('')}</div>` : ''}
+      <div class="acoes">
+        <button class="p" onclick="abrirPagar('${c.id}')">Registar pagamento</button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="vazio">Ainda não há clientes. Adiciona o primeiro.</div>`;
+}
+
+/* ---------- novo cliente ---------- */
+document.getElementById('btNovo').onclick = () => {
+  document.getElementById('cInicio').value = new Date().toISOString().slice(0,7);
+  document.getElementById('erroCliente').textContent = '';
+  dlgCliente.showModal();
+};
+
+document.getElementById('btGuardar').onclick = async () => {
+  const erro = document.getElementById('erroCliente');
+  const euros = parseFloat(document.getElementById('cValor').value);
+  if (!(euros > 0)) { erro.textContent = 'Indica um valor maior que zero.'; return; }
+
+  try {
+    await api('/faturacao/clientes', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        nome: document.getElementById('cNome').value,
+        email: document.getElementById('cEmail').value,
+        // Math.round e não truncatura: 49.90*100 dá 4989.999... em
+        // vírgula flutuante, e truncar perderia um cêntimo por cliente.
+        valorCentimos: Math.round(euros * 100),
+        periodicidade: document.getElementById('cPeriodo').value,
+        diaVencimento: Number(document.getElementById('cDia').value),
+        mesInicio: document.getElementById('cInicio').value,
+        dominios: document.getElementById('cDominios').value
+          .split(',').map(s => s.trim()).filter(Boolean),
+      })
+    });
+    dlgCliente.close();
+    ['cNome','cEmail','cValor','cDominios'].forEach(i => document.getElementById(i).value = '');
+    carregar();
+  } catch(e){ erro.textContent = e.message; }
+};
+
+/* ---------- pagamento ---------- */
+function abrirPagar(clienteId){
+  const l = estado.linhas.find(x => x.cliente.id === clienteId);
+  clienteAtual = l.cliente;
+  // Propõe o mês mais antigo em dívida: é quase sempre o que se quer
+  // registar, e evita pagar o mês corrente deixando um atraso para trás.
+  const alvo = l.emFalta[0];
+  document.getElementById('pagAjuda').textContent = l.cliente.nome;
+  document.getElementById('pMes').value = alvo ? alvo.mes : new Date().toISOString().slice(0,7);
+  document.getElementById('pValor').value = ((alvo ? alvo.faltaCentimos : l.cliente.valorCentimos)/100).toFixed(2);
+  document.getElementById('pData').value = new Date().toISOString().slice(0,10);
+  document.getElementById('erroPagar').textContent = '';
+  dlgPagar.showModal();
+}
+
+document.getElementById('btPagar').onclick = async () => {
+  const erro = document.getElementById('erroPagar');
+  const euros = parseFloat(document.getElementById('pValor').value);
+  if (!(euros > 0)) { erro.textContent = 'Indica o valor recebido.'; return; }
+  try {
+    const r = await api('/faturacao/pagamentos', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        clienteId: clienteAtual.id,
+        mes: document.getElementById('pMes').value,
+        valorCentimos: Math.round(euros * 100),
+        data: document.getElementById('pData').value,
+        metodo: document.getElementById('pMetodo').value,
+        referencia: document.getElementById('pRef').value,
+      })
+    });
+    if (r.avisoDuplicado && !confirm('Já havia um pagamento registado para este mês. Registar mesmo assim?')) return;
+    dlgPagar.close();
+    document.getElementById('pRef').value = '';
+    carregar();
+  } catch(e){ erro.textContent = e.message; }
+};
+
+/* ---------- órfãos ---------- */
+document.getElementById('btOrfaos').onclick = () => {
+  const o = plesk?.orfaos || [];
+  document.getElementById('listaOrfaos').innerHTML = !plesk?.configurado
+    ? '<p class="aj">O Plesk não está configurado. Define PLESK_URL e PLESK_API_KEY no .env.</p>'
+    : (o.length ? o.map(d => `<span class="dom fora">${d.nome}</span>`).join('')
+                : '<p class="aj">Todos os domínios alojados estão associados a um cliente.</p>');
+  dlgOrfaos.showModal();
+};
+
+carregar();
+</script>
+</body>
+</html>

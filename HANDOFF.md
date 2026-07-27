@@ -65,6 +65,8 @@ orchestrator/
     index.html       primeira interface, mantida
     modelos/*.glb    modelos do Meshy, JÁ NÃO USADOS (ver abaixo)
 android/             app Android em Jetpack Compose (WebView só no preview)
+
+android/             app Android: WebView + reconhecimento de voz nativo
 deploy/              setup-vps.sh, build-apk.sh, fetch-vendor.sh
 ```
 
@@ -648,131 +650,170 @@ arranque. Ficheiros novos em disco, codigo velho em memoria.
   projeto, que nao dao para apagar por ser stack com servidor. Considerar
   Studio alojado em sanity.studio em vez de embebido.
 
+---
+
+## Gestor de mensalidades e domínios (FEITO)
+
+Duas coisas separadas de proposito. A faturacao nao depende do Plesk: se
+a API do painel falhar ou mudar de versao, continuas a saber quem te deve
+dinheiro.
+
+### Mensalidades — `agents/faturacao.js` + `public/faturacao.html`
+
+Menos de 10 clientes, so registo e aviso. Ficheiro JSON, sem base de
+dados: e facil de copiar para seguranca e le-se com os olhos.
+
+- **Valores em CENTIMOS inteiros.** A API recusa `49.9`. A interface
+  aceita euros e converte com `Math.round` — `49.90*100` em virgula
+  flutuante da `4989.999...` e truncar perderia um centimo por cliente
+  por mes.
+- Pagamentos **anulam-se, nao se apagam**. Clientes **desativam-se**.
+  Um historico reescrevivel nao serve de prova.
+- Copia `.bak` antes de cada escrita.
+
+Armadilhas de datas, todas testadas: dia 31 em fevereiro vence a 28 (nao
+transborda para marco); `somarMeses` e aritmetica de inteiros e nao
+`Date`, porque somar meses a um Date faz 31/jan + 1 mes = 3/mar;
+trimestral so deve de 3 em 3; previsao mensal normaliza (anual de 600 EUR
+conta 50/mes); mes corrente antes do dia de vencimento NAO e atraso.
+
+    GET  /faturacao/estado          quem deve o que, ordenado por atraso
+    GET  /faturacao/clientes/:id    historico
+    POST /faturacao/clientes
+    POST /faturacao/pagamentos      avisa se ja havia pagamento no mes
+    POST /faturacao/pagamentos/:id/anular
+
+### Dominios — `agents/saude.js` + `public/dominios.html`
+
+Inventario = dominios do Plesk + dominios associados a clientes. Mostra
+os que estao no Plesk sem cliente (sites que talvez nao estejas a cobrar)
+e os que tens em faturacao mas nao estao no Plesk.
+
+Verifica por dominio: DNS (A/AAAA/MX), certificado (emissor, dias para
+expirar, se cobre o dominio), HTTP e HTTPS (codigo, tempo, HSTS,
+redireccionamento). Sem dependencias.
+
+**Decisao central:** o socket TLS usa `rejectUnauthorized: false`. Parece
+errado num verificador de seguranca, mas e o contrario — se rejeitasse
+certificados invalidos, a ligacao caia antes de o podermos LER, e o
+diagnostico mais util ("expirou ha 3 dias") ficava impossivel. Nos nao
+confiamos no certificado: inspecionamo-lo e relatamos.
+
+O varrimento corre EM FUNDO e responde imediatamente: com 30 dominios
+passa dos 30 segundos e um proxy a frente cortaria a ligacao. A pagina
+sonda `/dominios/saude` de 3 em 3 segundos.
+
+    GET  /dominios                      inventario
+    GET  /dominios/saude                ultimo resultado (nao verifica)
+    POST /dominios/saude/verificar      varre em fundo (6 por 10 min)
+    GET  /dominios/saude/:dominio       um so, a vontade
+
+### Plesk — `agents/plesk.js`
+
+**A CHAVE DE API FICA VINCULADA AO IP DE ONDE FOI PEDIDA.** Gerar a
+partir da Contabo, por SSH, nunca do PC — senao da 401 sempre:
+
+    curl -k -X POST -u admin:PASSWORD -H "Content-Type: application/json" \
+      -d '{}' https://SERVIDOR:8443/api/v2/auth/keys
+
+Endpoints usados: `GET /api/v2/domains`, `GET /api/v2/clients`, header
+`X-API-Key`, porta 8443. Cache de 10 minutos.
+
+Muitas instalacoes Plesk tem certificado auto-assinado; o Node recusa-o e
+bem. `PLESK_IGNORAR_CERT=1` existe mas a resposta certa e instalar
+Let's Encrypt no proprio Plesk.
+
+### NAO verificado
+
+Os testes de certificado no MEU ambiente nao valem nada: ha um proxy TLS
+que substitui todos os certificados (emissor aparece como "Anthropic",
+e `expired.badssl.com` deu 30 dias em vez de expirado). A logica de
+classificacao foi testada com dados controlados e esta certa; os
+certificados REAIS so se veem na VPS.
+
+A ligacao ao Plesk nunca foi testada contra um Plesk a serio.
+
+### Fora de ambito, de proposito
+
+Nao gera faturas nem comunica ao e-Fatura. Em Portugal isso exige
+software certificado pela AT. Isto e um **registo de controlo interno**
+para saberes quem paga o que; as faturas continuam a sair de onde saem.
 
 ---
 
-# Sessão de 26/07 — Vault nativo, stacks no APK, backups
+## Navegação nativa na app (FEITO)
 
-## O que ficou feito
+`DaisyNavBar.kt` — barra em Canvas, quatro secções: Escritório, Domínios,
+Mensalidades, Vault. O indicador DESLIZA entre secções (ValueAnimator,
+260ms, DecelerateInterpolator) e o texto acende por proximidade ao
+indicador, não só no fim do percurso.
 
-**O Vault deixou de ser WebView.** Lista, detalhe, relatórios e ações são
-Compose. O WebView aparece agora **num único sítio**: ao abrir a
-plataforma construída, dentro do detalhe.
+Transição entre secções: o conteúdo sai 22% da largura para o lado de
+onde veio o toque, a página nova carrega escondida, e entra do lado
+oposto. A direção transmite onde estás na sequência. O WebView é
+escondido durante o carregamento — sem isso via-se um clarão branco a
+meio da animação.
 
-O detalhe de cada plataforma mostra o briefing original, cada etapa com
-resultado e duração, e os relatórios dos agentes. Três ações: abrir,
-corrigir e anular (com confirmação).
+A barra fica IMÓVEL enquanto o conteúdo transita. É isso que separa uma
+app de um site dentro de uma moldura.
 
-**Os relatórios não são guardados em lado nenhum.** O endpoint novo
-`GET /projects/:id` lê os próprios ficheiros markdown que os agentes
-escrevem — `PLANO.md`, `ARQUITETURA.md`, `DESIGN.md`, `QA.md`, `NOTAS.md`.
-É onde vive a verdade; duplicá-los em metadados só criaria duas versões
-para divergirem.
+Entrada no painel: o ecrã de arranque desvanece ENQUANTO o painel
+aparece (340ms sobrepostos) e a barra entra 120ms depois. Sem ecrã vazio
+entre os dois.
 
-**Seletor de stack no APK**, com a mesma lista do painel web. As stacks
-sem chaves configuradas aparecem a cinzento e dizem porquê, em vez de
-deixarem escolher e falharem no build. A complexidade mudou-se para junto
-da stack: as duas decidem-se por projeto, ao contrário das atribuições de
-CLI, que são permanentes.
+Detalhes:
+- `onPageFinished` sincroniza a barra com o URL, para navegação feita a
+  partir de links dentro do HTML também mover o indicador.
+- Botão voltar fora da primeira secção leva ao Escritório em vez de sair
+  da app — comportamento esperado em navegação por separadores.
+- Nos painéis de credenciais e de erro a barra desaparece.
+- As páginas HTML escondem a sua própria nav quando `DAISY_VOZ_NATIVA`
+  está definido (classe `na-app`): senão eram duas barras a dizer o
+  mesmo, uma delas a deslizar com o conteúdo.
 
-**`deploy/backup.sh`** arquiva vault e configuração, mantém 14 cópias e
-recusa correr com menos de 500 MB livres. Testado. Instalar:
+---
 
-```bash
-chmod +x deploy/backup.sh
-(crontab -l 2>/dev/null; echo "0 4 * * * /root/ai-office/deploy/backup.sh") | crontab -
-```
+## Domínios em nativo (FEITO) — e a decisão sobre bateria
 
-E confirmar que o orchestrator sobrevive a um reinício: `pm2 startup`
-(correr o comando que ele imprime) seguido de `pm2 save`.
+`Api.kt` + `EcraDominios.kt`. O WebView deixou de ser usado nesta secção.
 
-## Armadilhas do Compose que custaram iterações
+### Porque NÃO há WebSocket aqui
 
-Todas deram erro de compilação ou ecrã vazio, e todas foram culpa de
-detalhes que não se adivinham:
+O custo de uma ligação persistente não está nos dados, está no rádio:
+quando ele acorda para transmitir, não volta a dormir logo — fica alguns
+segundos em estado de alta energia à espera de mais tráfego. Keepalives
+de 30 em 30 segundos mantêm esse ciclo em permanência, mesmo sem passar
+nada de útil.
 
-- **`animateColorAsState`** está em `androidx.compose.animation`, não em
-  `.animation.core`. O wildcard do core não o traz.
-- **`CircleShape`** está em `androidx.compose.foundation.shape` e não vem
-  com `import androidx.compose.foundation.*`.
-- **`kotlinx.coroutines.launch`** tem de ser importado à mão para usar
-  `rememberCoroutineScope().launch`.
-- **`HorizontalPager`** é experimental; o opt-in está nos
-  `freeCompilerArgs` do `app/build.gradle`. Não tirar.
-- **O cookie é `office_sess`.** Inventei outro nome e o resultado foi um
-  ecrã preto com "a reconectar" — nem REST nem WebSocket autenticavam.
+No ecrã exterior do Flip 6 isso é desperdício puro: as sessões duram
+segundos (abrir, ver a cor, fechar) e o corpo é fino demais para
+dissipar bem. Além disso o health check NÃO é tempo real — o resultado
+de um varrimento vale horas, certificados não mudam ao segundo.
 
-**Ver erros de compilação sem correr o script todo:**
+Regra adotada, por ecrã e não global:
+- **Domínios e Mensalidades**: leem ao abrir. Rádio acorda, transfere
+  uns KB, dorme.
+- **Escritório**: WebSocket (há output ao vivo), mas SÓ enquanto o ecrã
+  estiver visível — por fazer.
 
-```bash
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export ANDROID_HOME=$HOME/android-sdk
-cd /root/ai-office/android
-~/gradle-8.7/bin/gradle assembleRelease --no-daemon 2>&1 | grep "^e: " | head -20
-```
+Durante um varrimento há sondagem de 3 em 3 segundos, mas é uma janela
+de meio minuto, não uma ligação sempre aberta. `onPause()` corta-a: uma
+app que continua a trabalhar depois de fechada é a diferença entre
+aquecer e não aquecer.
 
-Sem as variáveis, o Gradle queixa-se de "SDK location not found", que não
-tem nada a ver com o erro real e faz perder tempo.
+### Adaptação ao ecrã exterior
 
-## Um erro de edição que vale a pena conhecer
+`compacto` = largura < 420dp. Nesse modo o cartão reduz-se ao essencial
+(barra de cor, domínio, resumo) em vez de encolher tudo
+proporcionalmente. Numa olhadela de três segundos o que se lê é a cor,
+não os milissegundos de resposta. Os detalhes (HTTP, ms, dias de
+certificado, emissor, cliente) só aparecem no ecrã grande.
 
-Ao acrescentar métodos ao `Cliente.kt`, inseri-os imediatamente antes de
-um marcador de comentário e, no mesmo script, removi código antigo
-cortando *da posição dele até esse mesmo marcador* — apagando o que tinha
-acabado de escrever. O balanço de chavetas passava na mesma.
+A barra de cor fica à ESQUERDA e é o primeiro elemento — lê-se antes de
+qualquer texto.
 
-Só a verificação de "cada método chamado existe mesmo?" é que apanhou.
-Vale a pena correr essa verificação depois de edições grandes:
+### Ainda por fazer
 
-```bash
-for m in stacks detalhe lancar apagar; do
-  echo "$m -> usado $(grep -h "cliente\.$m(" *.kt | wc -l), definido $(grep -c "fun $m(" Cliente.kt)"
-done
-```
-
-## Por fazer, por ordem de retorno
-
-### 1. Dar olhos ao QA
-
-O QA testa lógica mas nunca vê a página: não sabe se o menu se parte no
-telemóvel nem se o contraste falha. É o maior buraco na qualidade do que
-o escritório entrega.
-
-Playwright headless na VPS (`npx playwright install --with-deps chromium`)
-e uma ferramenta em `orchestrator/tools/ver-pagina.js` que receba um URL e
-devolva: screenshot em viewport de telemóvel e de secretária, erros da
-consola, contraste dos pares texto/fundo, e elementos que transbordem na
-horizontal.
-
-O `npx` já está na lista de comandos permitidos do `runner.js`. Falta a
-persona do QA em `roles.js` mencionar a ferramenta e exigir que ele a use
-antes de dar parecer. O alvo é `http://localhost:3000/preview/<id>/` —
-dentro da própria VPS.
-
-### 2. Notificações e widget
-
-Um `ForegroundService` que mantenha o WebSocket aberto com a app fechada.
-O `Cliente.kt` já tem toda a lógica de ligação e reconexão; o serviço só
-precisa de o instanciar e reagir a `pipeline/end`.
-
-Com o serviço de pé, o widget vem quase de graça: `AppWidgetProvider` com
-`RemoteViews` — texto e barra de progresso, porque widgets Android não
-fazem Canvas nem 3D. Permissões: `POST_NOTIFICATIONS` e
-`FOREGROUND_SERVICE_DATA_SYNC`.
-
-### 3. Publicar plataformas no GitHub
-
-Cada projeto do vault já é um repositório git com histórico por agente;
-falta o remoto. Um `POST /projects/:id/publicar` que crie o repositório
-pela API (token com *Administration: write*, no `.env`), faça `git remote
-add` e `git push`, e grave o URL nos metadados. Privado por omissão — são
-plataformas geradas por IA e podem conter disparates. No APK, o botão vai
-no detalhe, ao lado de Abrir e Corrigir.
-
-### 4. Consciência de gasto
-
-Não há visibilidade sobre quanta quota cada corrida queima. As etapas já
-guardam `startedAt`, `finishedAt`, `cli`, `tier` e `model` — a
-matéria-prima está toda lá, falta agregar por CLI e por dia e mostrar nos
-gráficos. Não dá tokens exatos (as CLIs de subscrição não os reportam),
-mas tempo por CLI é bom indicador de onde está a ir a quota.
+Escritório e Mensalidades continuam em WebView. O Vault deve ficar
+assim: serve para ver plataformas web, e reimplementar um browser não
+tem retorno.

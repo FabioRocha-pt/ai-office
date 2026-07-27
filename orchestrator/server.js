@@ -14,7 +14,9 @@ const { runAgent } = require("./agents/runner");
 const { runPipeline, reviseProject, isRunning, forceReset, current } = require("./agents/pipeline");
 const vault = require("./agents/vault");
 const stacks = require("./agents/stacks");
-const github = require("./agents/github");
+const faturacao = require("./agents/faturacao");
+const plesk = require("./agents/plesk");
+const saude = require("./agents/saude");
 const { espacoLivreMB, MIN_DISCO_MB } = require("./agents/build");
 const assignments = require("./agents/assignments");
 const models = require("./agents/models");
@@ -168,6 +170,139 @@ app.post("/auth/devices/:id/revogar", (req, res) => {
   const ok = auth.revogarDispositivo(req.params.id);
   if (!ok) return res.status(404).json({ error: "Dispositivo desconhecido." });
   res.json({ revogado: req.params.id });
+});
+
+/* ---------------- faturação: mensalidades dos clientes ---------------- */
+
+// Envolve um handler para não repetir try/catch em cada rota. Os erros do
+// módulo de faturação são de validação, por isso 400 e não 500.
+const rota = (fn) => (req, res) => {
+  try { res.json(fn(req, res)); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+};
+
+app.get("/faturacao/estado", rota((req) => faturacao.estado(req.query.mes)));
+app.get("/faturacao/clientes", rota(() => ({ clientes: faturacao.listarClientes() })));
+app.get("/faturacao/clientes/:id", rota((req) => faturacao.historico(req.params.id)));
+
+app.post("/faturacao/clientes", rota((req) => faturacao.adicionarCliente(req.body || {})));
+app.patch("/faturacao/clientes/:id", rota((req) => faturacao.editarCliente(req.params.id, req.body || {})));
+app.post("/faturacao/clientes/:id/desativar", rota((req) => faturacao.desativarCliente(req.params.id)));
+
+app.post("/faturacao/pagamentos", rota((req) => faturacao.registarPagamento(req.body || {})));
+app.post("/faturacao/pagamentos/:id/anular",
+  rota((req) => faturacao.anularPagamento(req.params.id, req.body?.motivo)));
+
+/* ---------------- domínios: inventário e saúde ---------------- */
+
+// Cache do último varrimento. Verificar 30 domínios leva 20-40 segundos,
+// e a página não pode esperar por isso a cada abertura.
+let ultimoVarrimento = null;
+let aVarrer = false;
+
+/** Todos os domínios conhecidos: os do Plesk mais os da faturação. */
+async function inventario() {
+  const clientes = faturacao.listarClientes().filter((c) => c.ativo);
+
+  // Domínio -> cliente. Um domínio pode estar na faturação sem estar no
+  // Plesk (alojado noutro sítio) e vice-versa; ambos os casos interessam.
+  const dono = new Map();
+  for (const c of clientes) {
+    for (const d of c.dominios || []) {
+      dono.set(String(d).toLowerCase().trim(), { id: c.id, nome: c.nome });
+    }
+  }
+
+  let noPlesk = [];
+  let erroPlesk = null;
+  if (plesk.configurado()) {
+    try {
+      const r = await plesk.dominios();
+      noPlesk = r.dominios.map((d) => ({
+        nome: String(d.name).toLowerCase(),
+        id: d.id, criado: d.created, tipo: d.hosting_type,
+      }));
+    } catch (e) { erroPlesk = e.message; }
+  }
+
+  const todos = new Map();
+  for (const d of noPlesk) {
+    todos.set(d.nome, { dominio: d.nome, noPlesk: true, plesk: d, cliente: dono.get(d.nome) || null });
+  }
+  for (const [nome, c] of dono) {
+    if (!todos.has(nome)) {
+      todos.set(nome, { dominio: nome, noPlesk: false, plesk: null, cliente: c });
+    }
+  }
+
+  return { dominios: [...todos.values()], erroPlesk, pleskConfigurado: plesk.configurado() };
+}
+
+app.get("/dominios", async (req, res) => {
+  try { res.json(await inventario()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Último resultado, sem verificar nada. É o que a página carrega primeiro.
+app.get("/dominios/saude", (req, res) => {
+  res.json({ aVarrer, ...(ultimoVarrimento || { resultados: [], resumo: null, em: null }) });
+});
+
+// Varrimento. Limitado: cada um abre centenas de ligações de rede.
+app.post("/dominios/saude/verificar",
+  auth.limitar({ max: 6, janelaMs: 10 * 60 * 1000,
+    mensagem: "Demasiados varrimentos seguidos. Espera uns minutos." }),
+  async (req, res) => {
+    if (aVarrer) return res.status(409).json({ error: "Já está a decorrer um varrimento." });
+
+    try {
+      const inv = await inventario();
+      const nomes = inv.dominios.map((d) => d.dominio);
+      if (!nomes.length) return res.json({ resultados: [], resumo: null, aviso: "Não há domínios para verificar." });
+
+      aVarrer = true;
+      // Responde já e continua em fundo: com 30 domínios isto passa dos
+      // 30 segundos e qualquer proxy à frente cortaria a ligação.
+      res.json({ iniciado: true, total: nomes.length });
+
+      const r = await saude.verificarVarios(nomes, 5);
+      const porDominio = new Map(inv.dominios.map((d) => [d.dominio, d]));
+      ultimoVarrimento = {
+        em: new Date().toISOString(),
+        resumo: r.resumo,
+        resultados: r.resultados.map((x) => ({ ...x, ...(porDominio.get(x.dominio) || {}) })),
+      };
+    } catch (err) {
+      console.error("[saude] varrimento falhou:", err.message);
+    } finally {
+      aVarrer = false;
+    }
+  });
+
+// Um domínio só, à vontade — para verificar depois de mexer em DNS.
+app.get("/dominios/saude/:dominio", async (req, res) => {
+  try { res.json(await saude.verificar(req.params.dominio)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* ---------------- Plesk (opcional, só enriquecimento) ---------------- */
+
+app.get("/plesk/estado", async (req, res) => {
+  res.json({ configurado: plesk.configurado(), ...(await plesk.testar()) });
+});
+
+app.get("/plesk/cruzar", async (req, res) => {
+  if (!plesk.configurado()) {
+    // 200 e não erro: a faturação funciona sem Plesk, e a interface
+    // precisa de saber distinguir "não configurado" de "avariado".
+    return res.json({ configurado: false, porCliente: [], orfaos: [] });
+  }
+  try {
+    const r = await plesk.cruzar(faturacao.listarClientes().filter((c) => c.ativo));
+    res.json({ configurado: true, ...r });
+  } catch (err) {
+    res.status(502).json({ configurado: true, error: err.message });
+  }
 });
 
 app.get("/stacks", (req, res) => {
@@ -363,50 +498,6 @@ app.get("/projects", (req, res) => {
   }
 });
 
-
-// Detalhe de uma plataforma: metadados, etapas e os relatórios que os
-// agentes escreveram. Os relatórios não são guardados em base de dados —
-// são os próprios ficheiros markdown que eles deixam na pasta, que é
-// onde vive a verdade.
-app.get("/projects/:id", (req, res) => {
-  const meta = vault.readMeta(req.params.id);
-  if (!meta) return res.status(404).json({ error: "Projeto não existe." });
-
-  const fs = require("fs");
-  const path = require("path");
-  const dir = vault.projectPath(req.params.id);
-
-  const FICHEIROS = [
-    ["PLANO.md", "CEO", "Plano de trabalho"],
-    ["ARQUITETURA.md", "CTO", "Arquitetura e stack"],
-    ["DESIGN.md", "Designer", "Design"],
-    ["QA.md", "QA Tester", "Relatório de testes"],
-    ["NOTAS.md", "Equipa", "Notas e passagens"],
-  ];
-
-  const relatorios = [];
-  for (const [nome, autor, titulo] of FICHEIROS) {
-    const caminho = path.join(dir, nome);
-    if (!fs.existsSync(caminho)) continue;
-    try {
-      const texto = fs.readFileSync(caminho, "utf8");
-      relatorios.push({
-        ficheiro: nome, autor, titulo,
-        // 12 KB chega para ler no telemóvel; o resto vê-se no vault web
-        texto: texto.length > 12000 ? texto.slice(0, 12000) + "\n\n[...cortado]" : texto,
-      });
-    } catch {}
-  }
-
-  res.json({
-    ...meta,
-    entry: vault.detectEntry(dir),
-    files: vault.scanFiles(dir),
-    git: vault.gitStats(dir),
-    relatorios,
-  });
-});
-
 app.post("/projects/:id/launch", (req, res) => {
   try {
     res.json(preview.launch(req.params.id));
@@ -417,18 +508,6 @@ app.post("/projects/:id/launch", (req, res) => {
 
 app.post("/projects/:id/stop", (req, res) => {
   res.json({ stopped: preview.stop(req.params.id) });
-});
-
-// Publicar a plataforma no GitHub. Privada por omissão: são geradas por
-// IA e convém veres antes de as tornares públicas.
-app.post("/projects/:id/publicar", async (req, res) => {
-  try {
-    const privado = req.body?.privado !== false;
-    const info = await github.publicar(req.params.id, privado);
-    res.json(info);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
 });
 
 app.delete("/projects/:id", (req, res) => {
@@ -498,37 +577,8 @@ app.get("/stats", (req, res) => {
 
     timeline.sort((a, b) => a.at - b.at);
 
-    // ---- Consciência de gasto ----
-    // As CLIs de subscrição não reportam tokens, por isso o melhor
-    // indicador que temos é tempo de execução por CLI. Diz-te onde está
-    // a ir a quota, mesmo sem número exato.
-    const porCli = {};
-    const porDia = {};
-    for (const p of projects) {
-      for (const e of p.stages || []) {
-        if (!e.startedAt || !e.finishedAt) continue;
-        const seg = Math.max(0, Math.round((e.finishedAt - e.startedAt) / 1000));
-        const cli = e.cli || "?";
-
-        porCli[cli] = porCli[cli] || { segundos: 0, etapas: 0 };
-        porCli[cli].segundos += seg;
-        porCli[cli].etapas += 1;
-
-        const dia = new Date(e.startedAt).toISOString().slice(0, 10);
-        porDia[dia] = (porDia[dia] || 0) + seg;
-      }
-    }
-
-    // últimos 14 dias, para o gráfico não crescer sem fim
-    const dias = Object.keys(porDia).sort().slice(-14);
-    const gasto = {
-      porCli,
-      porDia: dias.map((d) => ({ dia: d, segundos: porDia[d] })),
-      totalSegundos: Object.values(porCli).reduce((a, c) => a + c.segundos, 0),
-    };
-
     res.json({
-      totals, byExt, byAgent, avgDuration, gasto,
+      totals, byExt, byAgent, avgDuration,
       timeline: timeline.slice(-200),
       projects: projects.map((p) => ({
         id: p.id, name: p.name, status: p.status, createdAt: p.createdAt,

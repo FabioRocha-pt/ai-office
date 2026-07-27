@@ -16,7 +16,7 @@ models.json
 .env
 
 # ---- artefactos de build ----
-orchestrator/public/apk/
+orchestrator/public/download/
 android/.gradle/
 android/build/
 android/app/build/
@@ -37,3 +37,11 @@ orchestrator/public/vendor/
 Thumbs.db
 *.log
 npm-debug.log*
+.env.save
+.env.*
+.env
+.env.*
+orchestrator/public/office.html.*
+.env
+.env.*
+orchestrator/public/office.html.*
